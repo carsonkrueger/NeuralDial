@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	gctx "context"
 	"database/sql"
+	"time"
 
 	"github.com/carsonkrueger/main/cfg"
 	"github.com/carsonkrueger/main/context"
@@ -9,6 +11,7 @@ import (
 	"github.com/carsonkrueger/main/logger"
 	"github.com/carsonkrueger/main/router"
 	"github.com/carsonkrueger/main/services"
+	"github.com/haguro/elevenlabs-go"
 	"github.com/tmc/langchaingo/llms/openai"
 
 	_ "github.com/lib/pq"
@@ -17,6 +20,7 @@ import (
 func web() {
 	cfg := cfg.LoadConfig()
 	lgr := logger.NewLogger(&cfg)
+	ctx := gctx.Background()
 
 	db, err := sql.Open("postgres", cfg.DbUrl())
 	defer db.Close()
@@ -35,7 +39,9 @@ func web() {
 		panic(err)
 	}
 
-	svcManagerCtx := context.NewServiceManagerContext(openAILLM)
+	elevenLabsClient := elevenlabs.NewClient(ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
+
+	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient)
 
 	dm := DAO.NewDAOManager(db)
 	sm := services.NewServiceManager(nil, svcManagerCtx)

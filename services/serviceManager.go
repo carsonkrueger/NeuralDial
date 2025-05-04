@@ -4,12 +4,14 @@ import (
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
+	"github.com/haguro/elevenlabs-go"
 	"github.com/tmc/langchaingo/llms"
 	"go.uber.org/zap"
 )
 
 type ServiceManagerContext interface {
 	PrimaryModel() llms.Model
+	ElevenLabsClient() *elevenlabs.Client
 }
 
 type ServiceContext interface {
@@ -44,6 +46,8 @@ type ServiceManager interface {
 	UsersService() UsersService
 	PrivilegesService() PrivilegesService
 	LLMService() LLMService
+	PhoneService() PhoneService
+	VoiceService() VoiceService
 }
 
 type serviceManager struct {
@@ -51,6 +55,7 @@ type serviceManager struct {
 	privilegesService PrivilegesService
 	llmService        LLMService
 	phoneService      PhoneService
+	voiceService      VoiceService
 	svcCtx            ServiceContext
 	ctx               ServiceManagerContext
 }
@@ -89,7 +94,15 @@ func (sm *serviceManager) LLMService() LLMService {
 
 func (sm *serviceManager) PhoneService() PhoneService {
 	if sm.phoneService == nil {
-		sm.phoneService = NewPhoneService(sm.svcCtx)
+		// implement concrete phone service here
+		// sm.phoneService = NewTwilioService(sm.svcCtx)
 	}
 	return sm.phoneService
+}
+
+func (sm *serviceManager) VoiceService() VoiceService {
+	if sm.voiceService == nil {
+		sm.voiceService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
+	}
+	return sm.voiceService
 }

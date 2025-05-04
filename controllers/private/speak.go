@@ -53,11 +53,26 @@ func (r *speak) speakPost(res http.ResponseWriter, req *http.Request) {
 	lgr.Info("Called")
 	ctx := req.Context()
 
-	err := r.SM().LLMService().Generate(ctx)
+	if err := req.ParseForm(); err != nil {
+		tools.HandleError(req, res, lgr, err, 400, "Invalid Form")
+		return
+	}
+
+	msg := req.FormValue("message")
+
+	llmRes, err := r.SM().LLMService().Generate(ctx, msg)
 	if err != nil {
 		tools.HandleError(req, res, lgr, err, 500, "Could not generate response")
 		return
 	}
+
+	bytes, err := r.SM().VoiceService().TextToSpeech(llmRes)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 500, "Cloud not convert LLM response to speech")
+		return
+	}
+
+	res.Write(bytes)
 }
 
 func (r *speak) speakPut(res http.ResponseWriter, req *http.Request) {

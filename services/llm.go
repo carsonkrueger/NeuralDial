@@ -7,7 +7,7 @@ import (
 )
 
 type LLMService interface {
-	Generate(ctx context.Context) error
+	Generate(ctx context.Context, msg string) (string, error)
 }
 
 type llmService struct {
@@ -22,15 +22,14 @@ func NewLLMService(ctx ServiceContext, llm llms.Model) *llmService {
 	}
 }
 
-func (l *llmService) Generate(ctx context.Context) error {
+func (l *llmService) Generate(ctx context.Context, msg string) (string, error) {
 	lgr := l.Lgr("llmService.Generate")
 	lgr.Info("Called")
 
-	res, err := llms.GenerateFromSinglePrompt(ctx, l.llm, "Hello this is a test")
+	res, err := llms.GenerateFromSinglePrompt(ctx, l.llm, msg)
 	if err != nil {
-		return err
+		return res, err
 	}
 
-	lgr.Info(res)
-	return nil
+	return res, nil
 }
