@@ -50,6 +50,7 @@ type serviceManager struct {
 	usersService      UsersService
 	privilegesService PrivilegesService
 	llmService        LLMService
+	phoneService      PhoneService
 	svcCtx            ServiceContext
 	ctx               ServiceManagerContext
 }
@@ -84,4 +85,11 @@ func (sm *serviceManager) LLMService() LLMService {
 		sm.llmService = NewLLMService(sm.svcCtx, sm.ctx.PrimaryModel())
 	}
 	return sm.llmService
+}
+
+func (sm *serviceManager) PhoneService() PhoneService {
+	if sm.phoneService == nil {
+		sm.phoneService = NewPhoneService(sm.svcCtx)
+	}
+	return sm.phoneService
 }

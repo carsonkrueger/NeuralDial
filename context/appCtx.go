@@ -19,8 +19,8 @@ type AppContext interface {
 type appContext struct {
 	Logger         *zap.Logger
 	ServiceManager services.ServiceManager
-	DAOManger DAO.DAOManager
-	Database  *sql.DB
+	DAOManger      DAO.DAOManager
+	Database       *sql.DB
 }
 
 func NewAppContext(
@@ -52,7 +52,6 @@ func (ctx *appContext) DM() DAO.DAOManager {
 func (ctx *appContext) DB() *sql.DB {
 	return ctx.Database
 }
-
 
 func (ctx *appContext) CleanUp() {
 	if err := ctx.Logger.Sync(); err != nil {
