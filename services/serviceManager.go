@@ -4,8 +4,13 @@ import (
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
+	"github.com/tmc/langchaingo/llms"
 	"go.uber.org/zap"
 )
+
+type ServiceManagerContext interface {
+	PrimaryModel() llms.Model
+}
 
 type ServiceContext interface {
 	Lgr(name string) *zap.Logger
@@ -17,8 +22,8 @@ type ServiceContext interface {
 type appContext struct {
 	Lgr *zap.Logger
 	SM  ServiceManager
-	DM DAO.DAOManager
-	DB *sql.DB
+	DM  DAO.DAOManager
+	DB  *sql.DB
 }
 
 func NewAppContext(
@@ -38,17 +43,21 @@ func NewAppContext(
 type ServiceManager interface {
 	UsersService() UsersService
 	PrivilegesService() PrivilegesService
+	LLMService() LLMService
 }
 
 type serviceManager struct {
 	usersService      UsersService
 	privilegesService PrivilegesService
-	svcCtx ServiceContext
+	llmService        LLMService
+	svcCtx            ServiceContext
+	ctx               ServiceManagerContext
 }
 
-func NewServiceManager(svcCtx ServiceContext) *serviceManager {
+func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContext) *serviceManager {
 	return &serviceManager{
 		svcCtx: svcCtx,
+		ctx:    svcManagerCtx,
 	}
 }
 
@@ -70,3 +79,9 @@ func (sm *serviceManager) PrivilegesService() PrivilegesService {
 	return sm.privilegesService
 }
 
+func (sm *serviceManager) LLMService() LLMService {
+	if sm.llmService == nil {
+		sm.llmService = NewLLMService(sm.svcCtx, sm.ctx.PrimaryModel())
+	}
+	return sm.llmService
+}

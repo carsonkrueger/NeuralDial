@@ -9,6 +9,7 @@ import (
 	"github.com/carsonkrueger/main/logger"
 	"github.com/carsonkrueger/main/router"
 	"github.com/carsonkrueger/main/services"
+	"github.com/tmc/langchaingo/llms/openai"
 
 	_ "github.com/lib/pq"
 )
@@ -26,8 +27,18 @@ func web() {
 		panic("Database connection is nil")
 	}
 
+	openAILLM, err := openai.New(
+		openai.WithToken(cfg.OpenAIAPIKey),
+		openai.WithModel("gpt-4o-mini"),
+	)
+	if err != nil || openAILLM == nil {
+		panic(err)
+	}
+
+	svcManagerCtx := context.NewServiceManagerContext(openAILLM)
+
 	dm := DAO.NewDAOManager(db)
-	sm := services.NewServiceManager(nil)
+	sm := services.NewServiceManager(nil, svcManagerCtx)
 	appCtx := context.NewAppContext(
 		lgr,
 		sm,

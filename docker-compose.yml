@@ -9,7 +9,7 @@ services:
         ports:
             - "${DB_EXTERNAL_PORT}:${DB_PORT}"
         volumes:
-            - ./volumes/postgres_data:/var/lib/postgresql/data
+            - ./_volumes/postgres_data:/var/lib/postgresql/data
         healthcheck:
             test: ["CMD", "pg_isready", "-U", "${DB_USER}", "-d", "${DB_NAME}"]
             interval: 3s

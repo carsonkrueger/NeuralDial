@@ -18,11 +18,11 @@ import (
 )
 
 type AppRouter struct {
-	public []builders.AppPublicRoute
+	public  []builders.AppPublicRoute
 	private []builders.AppPrivateRoute
-	addr   string
-	router chi.Router
-	appCtx context.AppContext
+	addr    string
+	router  chi.Router
+	appCtx  context.AppContext
 }
 
 func NewAppRouter(ctx context.AppContext) AppRouter {
@@ -39,6 +39,7 @@ func NewAppRouter(ctx context.AppContext) AppRouter {
 			private.NewPrivileges(ctx),
 			private.NewPrivilegeLevels(ctx),
 			private.NewPrivilegeLevelsPrivileges(ctx),
+			private.NewSpeak(ctx),
 		},
 	}
 }

@@ -110,7 +110,7 @@ install-system-deps:
 remove-markers:
 	@find . \( $(foreach dir,$(EXCLUDE_DIRS),-path ./$(dir) -o ) -false \) -prune -o -type f -exec sed -i '/[\/#]\s*DB-START\s*$$/d; /[\/#]\s*DB-END\s*$$/d' {} +
 
-EXCLUDE_DIRS=volumes node_modules
+EXCLUDE_DIRS=_volumes node_modules
 
 remove-db-files:
 	rm -f ./builders/handler.go

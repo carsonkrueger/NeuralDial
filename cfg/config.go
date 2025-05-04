@@ -9,10 +9,12 @@ import (
 )
 
 type Config struct {
-	AppEnv string
-	Host   string
-	Port   string
-	DbConfig DbConfig
+	AppEnv           string
+	Host             string
+	Port             string
+	DbConfig         DbConfig
+	OpenAIAPIKey     string
+	ElevenLabsAPIKey string
 }
 
 type DbConfig struct {
@@ -22,7 +24,6 @@ type DbConfig struct {
 	Host     string
 	Port     string
 }
-
 
 func LoadConfig() Config {
 	internal := flag.Bool("internal", false, "internal=true if running inside docker container")
@@ -34,9 +35,11 @@ func LoadConfig() Config {
 		dbHost = os.Getenv("DB_HOST")
 	}
 	return Config{
-		AppEnv: os.Getenv("APP_ENV"),
-		Host:   os.Getenv("HOST"),
-		Port:   os.Getenv("PORT"),
+		AppEnv:           os.Getenv("APP_ENV"),
+		Host:             os.Getenv("HOST"),
+		Port:             os.Getenv("PORT"),
+		OpenAIAPIKey:     os.Getenv("OPENAI_API_KEY"),
+		ElevenLabsAPIKey: os.Getenv("ELEVEN_LABS_API_KEY"),
 		DbConfig: DbConfig{
 			user:     os.Getenv("DB_USER"),
 			password: os.Getenv("DB_PASSWORD"),
