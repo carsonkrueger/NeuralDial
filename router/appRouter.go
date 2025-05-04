@@ -19,9 +19,7 @@ import (
 
 type AppRouter struct {
 	public []builders.AppPublicRoute
-	// DB-START
 	private []builders.AppPrivateRoute
-	// DB-END
 	addr   string
 	router chi.Router
 	appCtx context.AppContext
@@ -31,21 +29,17 @@ func NewAppRouter(ctx context.AppContext) AppRouter {
 	return AppRouter{
 		appCtx: ctx,
 		public: []builders.AppPublicRoute{
-			// DB-START
 			public.NewLogin(ctx),
 			public.NewSignUp(ctx),
-			// DB-END
 			public.NewWebPublic(ctx),
 			public.NewHome(ctx),
 		},
-		// DB-START
 		private: []builders.AppPrivateRoute{
 			private.NewUserManagement(ctx),
 			private.NewPrivileges(ctx),
 			private.NewPrivilegeLevels(ctx),
 			private.NewPrivilegeLevelsPrivileges(ctx),
 		},
-		// DB-END
 	}
 }
 
@@ -60,7 +54,6 @@ func (a *AppRouter) BuildRouter() {
 		lgr.Info(r.Path())
 	}
 
-	// DB-START
 	// enforce authentication middleware
 	a.router = a.router.With(middlewares.EnforceAuth(a.appCtx))
 
@@ -70,7 +63,6 @@ func (a *AppRouter) BuildRouter() {
 		a.router.Mount(r.Path(), builder.RawRouter())
 		lgr.Info(r.Path())
 	}
-	// DB-END
 }
 
 func (a *AppRouter) Start(cfg cfg.Config) error {

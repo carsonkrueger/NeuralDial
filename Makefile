@@ -7,17 +7,13 @@ GO_BIN_PATH := ~/go/bin
 AIR_CMD := ${GO_BIN_PATH}/air
 TEMPL_CMD := ${GO_BIN_PATH}/templ
 
-# DB-START
 MIGRATE_CMD := ${GO_BIN_PATH}/migrate
 JET_CMD := ${GO_BIN_PATH}/jet
 DB_URL_EXTERNAL := "postgres://${DB_USER}:${DB_PASSWORD}@${DB_EXTERNAL_HOST}:${DB_EXTERNAL_PORT}/${DB_NAME}?sslmode=disable"
 DB_URL_INTERNAL := "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
-# DB-END
 
 live:
-# DB-START
 	make docker-postgres
-# DB-END
 	${AIR_CMD}
 
 templ:
@@ -34,16 +30,13 @@ build:
 docker:
 	make docker-down
 	docker compose up -d --build \
-# DB-START
 	    db \
-# DB-END
 		go_backend \
 		--remove-orphans
 
 docker-down:
 	docker compose down
 
-# DB-START
 docker-postgres:
 	make docker-postgres-down
 	docker compose up -d db --remove-orphans
@@ -75,14 +68,12 @@ generate-private-controller:
 	@echo "Enter camelCase controller name: "; \
 	read controller; \
 	go run . -name="$$controller" -private=true genController
-# DB-END
 
 generate-public-controller:
 	@echo "Enter camelCase controller name: "; \
 	read controller; \
 	go run . -name="$$controller" -private=false genController
 
-# DB-START
 seed:
 	go run . seed
 
@@ -109,15 +100,12 @@ jet-all-internal:
 
 jet:
 	${JET_CMD} -dsn=${DB_URL_EXTERNAL} -schema=$(schema) -path=./gen;
-# DB-END
 
 install-system-deps:
-	go install github.com/a-h/templ/cmd/templ@latest` \
-	go install github.com/air-verse/air@latest` \
-	# DB-START
-	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest` \
-	go install github.com/go-jet/jet/v2/cmd/jet@latest`
-	# DB-END
+	go install github.com/a-h/templ/cmd/templ@latest
+	go install github.com/air-verse/air@latest
+	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+	go install github.com/go-jet/jet/v2/cmd/jet@latest
 
 remove-markers:
 	@find . \( $(foreach dir,$(EXCLUDE_DIRS),-path ./$(dir) -o ) -false \) -prune -o -type f -exec sed -i '/[\/#]\s*DB-START\s*$$/d; /[\/#]\s*DB-END\s*$$/d' {} +

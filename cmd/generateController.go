@@ -15,10 +15,8 @@ import (
 
 func generateController() {
 	controller := flag.String("name", "", "camelCase Name of the controller")
-	// DB-START
 	private := flag.Bool("private", true, "Is a private controller")
 	flag.Parse()
-	// DB-END
 
 	// lower first letter of table name
 	controller = tools.Ptr(tools.ToLowerFirst(*controller))
@@ -33,30 +31,22 @@ func generateController() {
 	}
 
 	var filePath string
-	// DB-START
 	if *private {
 		filePath = fmt.Sprintf("%s/controllers/private/%s.go", wd, *controller)
 	} else {
-		// DB-END
 		filePath = fmt.Sprintf("%s/controllers/public/%s.go", wd, *controller)
-		// DB-START
 	}
-	// DB-END
 	if err := os.MkdirAll(path.Dir(filePath), 0755); err != nil {
 		lgr.Error("failed to create directory", zap.Error(err))
 		os.Exit(1)
 	}
 
 	var contents string
-	// DB-START
 	if *private {
 		contents = privateControllerFileContents(*controller)
 	} else {
-		// DB-END
 		contents = publicControllerFileContents(*controller)
-		// DB-START
 	}
-	// DB-END
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		if os.IsExist(err) {
@@ -70,7 +60,6 @@ func generateController() {
 	file.Close()
 }
 
-// DB-START
 func privateControllerFileContents(name string) string {
 	upper := tools.ToUpperFirst(name)
 	lower := tools.ToLowerFirst(name)
@@ -141,7 +130,6 @@ func (r *%[1]s) %[1]sDelete(res http.ResponseWriter, req *http.Request) {
 `, lower, upper)
 }
 
-// DB-END
 
 func publicControllerFileContents(name string) string {
 	upper := tools.ToUpperFirst(name)
