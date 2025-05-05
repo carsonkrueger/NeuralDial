@@ -7,59 +7,47 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
-	"github.com/carsonkrueger/main/templates/pageLayouts"
-	"github.com/carsonkrueger/main/templates/pages"
+	"github.com/carsonkrueger/main/models"
 	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
 const (
-	SpeakGet    = "SpeakGet"
-	SpeakWS     = "SpeakWS"
-	SpeakPut    = "SpeakPut"
-	SpeakPatch  = "SpeakPatch"
-	SpeakDelete = "SpeakDelete"
+	WebTextGet = "WebTextGet"
+	WebTextWS  = "WebTextWS"
 )
 
-type speak struct {
+type webText struct {
 	context.AppContext
 }
 
-func NewSpeak(ctx context.AppContext) *speak {
-	return &speak{
+func NewWebText(ctx context.AppContext) *webText {
+	return &webText{
 		AppContext: ctx,
 	}
 }
 
-func (r speak) Path() string {
-	return "/speak"
+func (um webText) Path() string {
+	return "/web_text"
 }
 
-func (r *speak) PrivateRoute(b *builders.PrivateRouteBuilder) {
-	b.NewHandle().Register(builders.GET, "/", r.speakGet).SetPermissionName(SpeakGet).Build()
-	b.NewHandle().Register(builders.GET, "/ws", r.speakWebSocket).SetPermissionName(SpeakWS).Build()
+func (um *webText) PrivateRoute(b *builders.PrivateRouteBuilder) {
+	b.NewHandle().Register(builders.GET, "/", um.webTextGet).SetPermissionName(WebTextGet).Build()
+	b.NewHandle().Register(builders.GET, "/ws", um.textWebSocket).SetPermissionName(WebTextWS).Build()
 }
 
-func (r *speak) speakGet(res http.ResponseWriter, req *http.Request) {
-	lgr := r.Lgr("speakGet")
+func (r *webText) webTextGet(res http.ResponseWriter, req *http.Request) {
+	lgr := r.Lgr("webTextGet")
+	lgr.Info("Called")
+}
+
+func (r *webText) textWebSocket(res http.ResponseWriter, req *http.Request) {
+	lgr := r.Lgr("textWebSocket")
 	lgr.Info("Called")
 	ctx := req.Context()
-	page := pageLayouts.Index(pages.ChatPage())
-	page.Render(ctx, res)
-}
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
-func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
-	lgr := r.Lgr("speakWebSocket")
-	lgr.Info("Called")
-	// ctx := req.Context()
 	mutex := sync.Mutex{}
-	// llmStreamingModel := models.LLMStreamingModel{}
+	llmStreamingModel := models.LLMStreamingModel{}
 
 	done := make(chan int)
 	defer close(done)
@@ -88,7 +76,6 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 				mutex.Unlock()
 				if err != nil {
 					lgr.Warn("No pong, closing connection...")
-					mutex.Unlock()
 					done <- 1
 					break outer
 				}
@@ -112,7 +99,7 @@ outer:
 				break outer
 			}
 
-			if msgType != websocket.BinaryMessage {
+			if msgType != websocket.TextMessage {
 				lgr.Warn("Invalid websocket message type")
 				closeMsg := websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "Unsupported message type")
 				mutex.Lock()
@@ -122,23 +109,17 @@ outer:
 				break outer
 			}
 
-			// msg := string(reqBytes)
+			msg := string(reqBytes)
 
-			// llmRes, err := r.SM().LLMService().Generate(ctx, &llmStreamingModel, msg)
-			// lgr.Info("Generate", zap.Any("Msg History:", llmStreamingModel.Messages()))
-			// if err != nil {
-			// 	lgr.Error("Could not generate LLM response", zap.Error(err))
-			// 	continue
-			// }
-
-			// resBytes, err := r.SM().VoiceService().TextToSpeech(llmRes)
-			// if err != nil {
-			// 	lgr.Error("Could not generate Text To Speech response", zap.Error(err))
-			// 	continue
-			// }
+			llmRes, err := r.SM().LLMService().Generate(ctx, &llmStreamingModel, msg)
+			lgr.Info("Generate", zap.Any("Msg History:", llmStreamingModel.Messages()))
+			if err != nil {
+				lgr.Error("Could not generate LLM response", zap.Error(err))
+				continue
+			}
 
 			mutex.Lock()
-			err = conn.WriteMessage(websocket.BinaryMessage, reqBytes)
+			err = conn.WriteMessage(websocket.BinaryMessage, []byte(llmRes))
 			mutex.Unlock()
 			if err != nil {
 				lgr.Error("Could not write message to connection", zap.Error(err))

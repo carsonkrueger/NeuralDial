@@ -40,6 +40,7 @@ func NewAppRouter(ctx context.AppContext) AppRouter {
 			private.NewPrivilegeLevels(ctx),
 			private.NewPrivilegeLevelsPrivileges(ctx),
 			private.NewSpeak(ctx),
+			private.NewWebText(ctx),
 		},
 	}
 }
