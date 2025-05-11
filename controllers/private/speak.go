@@ -50,8 +50,8 @@ func (r *speak) speakGet(res http.ResponseWriter, req *http.Request) {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  8192,
+	WriteBufferSize: 8192,
 }
 
 func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {

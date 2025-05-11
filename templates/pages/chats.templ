@@ -8,46 +8,25 @@ templ ChatPage() {
 templ Speak() {
 	<script>
 	    let speakws = new WebSocket("/speak/ws");
-		speakws.binaryType = "arraybuffer";
+	    speakws.binaryType = "arraybuffer";
 
 		speakws.onopen = () => {
-			console.log("WebSocket connected");
-			startMicrophone();
+            console.log("WebSocket connected");
+            startSpeakingAudioStream(sendData, 16000);
 		};
 
-		speakws.onmessage = (e) => {
-			if (e.data instanceof ArrayBuffer) {
-				const blob = new Blob([e.data], { type: "audio/webm" });
-				const url = URL.createObjectURL(blob);
-				const audio = new Audio(url);
-				audio.play();
-			} else {
-				console.warn("Unexpected msg type", e);
-			}
-		};
+	    speakws.onmessage = (e) => {
+            if (e.data instanceof ArrayBuffer) {
+                console.log("RECIEVING")
+            } else {
+                console.warn("Unexpected msg type", e);
+            }
+	    };
 
-		speakws.onerror = (err) => console.error("WS error", err);
+	    speakws.onerror = (err) => console.error("WS error", err);
 
-		async function startMicrophone() {
-			try {
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-				const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-
-				mediaRecorder.ondataavailable = function (event) {
-					if (event.data.size > 0 && speakws.readyState === WebSocket.OPEN) {
-						speakws.send(event.data);
-					}
-				};
-
-				mediaRecorder.onstop = function () {
-					stream.getTracks().forEach(track => track.stop());
-				};
-
-				mediaRecorder.start(250); // Send audio in 250ms chunks
-				console.log("Recording started");
-			} catch (err) {
-				console.error("Microphone error:", err);
-			}
+		function sendData(data) {
+		    speakws.send(data)
 		}
 	</script>
 }
@@ -77,7 +56,7 @@ templ TextChat() {
 			}
 		}
 	</script>
-	<div class="flex flex-col gap-2">
+	<div class="flex flex-col gap-2 bg-black h-screen text-white">
 		<button onclick="SendInput()" class="border border-gray-100">Text</button>
 		<textarea id="textWeb" rows="15" class="border border-gray-100"></textarea>
 		response
