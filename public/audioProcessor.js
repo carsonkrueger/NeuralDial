@@ -31,8 +31,8 @@ class LinearPCMProcessor extends AudioWorkletProcessor {
             // console.log(normalized)
             this.buffer[i + this.offset] = normalized
             // This will echo audio back out - stereo
-            outputLeft[i] = input[i]
-            outputRight[i] = input[i]
+            // outputLeft[i] = input[i]
+            // outputRight[i] = input[i]
         }
         this.offset += input.length;
 
