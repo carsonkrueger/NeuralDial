@@ -7,7 +7,7 @@ import (
 )
 
 type ElevenLabsService interface {
-	VoiceService
+	TextToVoiceConverter
 }
 
 type elevenLabsService struct {

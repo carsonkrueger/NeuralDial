@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
@@ -12,6 +13,7 @@ import (
 type ServiceManagerContext interface {
 	PrimaryModel() llms.Model
 	ElevenLabsClient() *elevenlabs.Client
+	WhisperCPPModelPath() string
 }
 
 type ServiceContext interface {
@@ -47,19 +49,21 @@ type ServiceManager interface {
 	PrivilegesService() PrivilegesService
 	LLMService() LLMService
 	PhoneService() PhoneService
-	VoiceService() VoiceService
+	TextToVoice() TextToVoiceConverter
+	SpeechToText() SpeechToTextConverter
 	WebSocketService() WebSocketService
 }
 
 type serviceManager struct {
-	usersService      UsersService
-	privilegesService PrivilegesService
-	llmService        LLMService
-	phoneService      PhoneService
-	voiceService      VoiceService
-	webSocketService  WebSocketService
-	svcCtx            ServiceContext
-	ctx               ServiceManagerContext
+	usersService        UsersService
+	privilegesService   PrivilegesService
+	llmService          LLMService
+	phoneService        PhoneService
+	textToVoiceService  TextToVoiceConverter
+	speechToTextService SpeechToTextConverter
+	webSocketService    WebSocketService
+	svcCtx              ServiceContext
+	ctx                 ServiceManagerContext
 }
 
 func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContext) *serviceManager {
@@ -67,6 +71,19 @@ func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContex
 		svcCtx: svcCtx,
 		ctx:    svcManagerCtx,
 	}
+}
+
+type PhoneService interface {
+	StartCall(ctx context.Context) error
+	EndCall(ctx context.Context) error
+}
+
+type TextToVoiceConverter interface {
+	TextToSpeech(msg string) ([]byte, error)
+}
+
+type SpeechToTextConverter interface {
+	SpeechToText(audio []byte) (string, error)
 }
 
 func (sm *serviceManager) SetAppContext(svcCtx ServiceContext) {
@@ -102,11 +119,18 @@ func (sm *serviceManager) PhoneService() PhoneService {
 	return sm.phoneService
 }
 
-func (sm *serviceManager) VoiceService() VoiceService {
-	if sm.voiceService == nil {
-		sm.voiceService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
+func (sm *serviceManager) TextToVoice() TextToVoiceConverter {
+	if sm.textToVoiceService == nil {
+		sm.textToVoiceService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
 	}
-	return sm.voiceService
+	return sm.textToVoiceService
+}
+
+func (sm *serviceManager) SpeechToText() SpeechToTextConverter {
+	if sm.speechToTextService == nil {
+		sm.speechToTextService = NewWhisperCPPService(sm.svcCtx, sm.ctx.WhisperCPPModelPath())
+	}
+	return sm.speechToTextService
 }
 
 func (sm *serviceManager) WebSocketService() WebSocketService {

@@ -41,7 +41,7 @@ func web() {
 
 	elevenLabsClient := elevenlabs.NewClient(ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
 
-	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient)
+	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient, "../models/whisper")
 
 	dm := DAO.NewDAOManager(db)
 	sm := services.NewServiceManager(nil, svcManagerCtx)
