@@ -48,6 +48,7 @@ type ServiceManager interface {
 	LLMService() LLMService
 	PhoneService() PhoneService
 	VoiceService() VoiceService
+	WebSocketService() WebSocketService
 }
 
 type serviceManager struct {
@@ -56,6 +57,7 @@ type serviceManager struct {
 	llmService        LLMService
 	phoneService      PhoneService
 	voiceService      VoiceService
+	webSocketService  WebSocketService
 	svcCtx            ServiceContext
 	ctx               ServiceManagerContext
 }
@@ -105,4 +107,11 @@ func (sm *serviceManager) VoiceService() VoiceService {
 		sm.voiceService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
 	}
 	return sm.voiceService
+}
+
+func (sm *serviceManager) WebSocketService() WebSocketService {
+	if sm.webSocketService == nil {
+		sm.webSocketService = NewWebSocketService(sm.svcCtx)
+	}
+	return sm.webSocketService
 }
