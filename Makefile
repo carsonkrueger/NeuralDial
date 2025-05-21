@@ -11,9 +11,11 @@ MIGRATE_CMD := ${GO_BIN_PATH}/migrate
 JET_CMD := ${GO_BIN_PATH}/jet
 DB_URL_EXTERNAL := "postgres://${DB_USER}:${DB_PASSWORD}@${DB_EXTERNAL_HOST}:${DB_EXTERNAL_PORT}/${DB_NAME}?sslmode=disable"
 DB_URL_INTERNAL := "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
+WHISPER_PATH := /home/carson/Repos/NeuralDial/whispercpp/whisper.cpp
+
 
 live:
-	make docker-postgres
+	make docker-postgres && \
 	${AIR_CMD}
 
 templ:
@@ -56,6 +58,11 @@ migrate-down:
 migrate-generate:
 	@read -p "Enter migration name: " name; \
 	${MIGRATE_CMD} create -ext sql -dir migrations -seq $$name
+
+generate-service:
+	@echo "Enter camelCase service name: "; \
+	read service; \
+	go run . -service="$$service" genService
 
 generate-dao:
 	@echo "Enter camelCase table name: "; \

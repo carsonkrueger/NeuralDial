@@ -1,10 +1,6 @@
 package services
 
-import (
-	"strings"
-
-	"github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-)
+// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 
 type WhisperCPP interface {
 	SpeechToTextConverter
@@ -12,44 +8,46 @@ type WhisperCPP interface {
 
 type whisperCPP struct {
 	ServiceContext
-	modelPath string
+	// model whisper.Model
 }
 
-func NewWhisperCPPService(ctx ServiceContext, modelPath string) WhisperCPP {
+func NewWhisperCPPService(
+	ctx ServiceContext,
+	// model whisper.Model
+) WhisperCPP {
 	return &whisperCPP{
 		ServiceContext: ctx,
-		modelPath:      modelPath,
+		// model:          model,
 	}
 }
 
 func (w *whisperCPP) SpeechToText(audio []byte) (string, error) {
-	m, err := whisper.New(w.modelPath)
-	if err != nil {
-		return "", err
-	}
-	defer m.Close()
+	// voiceCtx, err := w.model.NewContext()
+	// if err != nil {
+	// 	return "", err
+	// }
 
-	voiceCtx, err := m.NewContext()
-	audioFloat32 := make([]float32, len(audio))
-	for i := range audio {
-		audioFloat32[i] = float32(audio[i])
-	}
+	// audioFloat32 := make([]float32, len(audio))
+	// for i := range audio {
+	// 	audioFloat32[i] = float32(audio[i])
+	// }
 
-	if err := voiceCtx.Process(audioFloat32, nil, nil, nil); err != nil {
-		return "", err
-	}
+	// if err := voiceCtx.Process(audioFloat32, nil, nil, nil); err != nil {
+	// 	return "", err
+	// }
 
-	var str strings.Builder
+	// var str strings.Builder
 
-	for {
-		segment, err := voiceCtx.NextSegment()
-		if err != nil {
-			break
-		}
-		if _, err := str.WriteString(segment.Text); err != nil {
-			return "", err
-		}
-	}
+	// for {
+	// 	segment, err := voiceCtx.NextSegment()
+	// 	if err != nil {
+	// 		break
+	// 	}
+	// 	if _, err := str.WriteString(segment.Text); err != nil {
+	// 		return "", err
+	// 	}
+	// }
 
-	return str.String(), nil
+	// return str.String(), nil
+	return "", nil
 }

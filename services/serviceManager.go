@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
+	// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 	"github.com/haguro/elevenlabs-go"
 	"github.com/tmc/langchaingo/llms"
 	"go.uber.org/zap"
@@ -13,7 +14,7 @@ import (
 type ServiceManagerContext interface {
 	PrimaryModel() llms.Model
 	ElevenLabsClient() *elevenlabs.Client
-	WhisperCPPModelPath() string
+	// WhisperCPPModel() whisper.Model
 }
 
 type ServiceContext interface {
@@ -52,6 +53,7 @@ type ServiceManager interface {
 	TextToVoice() TextToVoiceConverter
 	SpeechToText() SpeechToTextConverter
 	WebSocketService() WebSocketService
+	MCPService() AppMCPService
 }
 
 type serviceManager struct {
@@ -62,6 +64,7 @@ type serviceManager struct {
 	textToVoiceService  TextToVoiceConverter
 	speechToTextService SpeechToTextConverter
 	webSocketService    WebSocketService
+	mcpService          AppMCPService
 	svcCtx              ServiceContext
 	ctx                 ServiceManagerContext
 }
@@ -128,7 +131,7 @@ func (sm *serviceManager) TextToVoice() TextToVoiceConverter {
 
 func (sm *serviceManager) SpeechToText() SpeechToTextConverter {
 	if sm.speechToTextService == nil {
-		sm.speechToTextService = NewWhisperCPPService(sm.svcCtx, sm.ctx.WhisperCPPModelPath())
+		// sm.speechToTextService = NewWhisperCPPService(sm.svcCtx, sm.ctx.WhisperCPPModel())
 	}
 	return sm.speechToTextService
 }
@@ -138,4 +141,11 @@ func (sm *serviceManager) WebSocketService() WebSocketService {
 		sm.webSocketService = NewWebSocketService(sm.svcCtx)
 	}
 	return sm.webSocketService
+}
+
+func (sm *serviceManager) MCPService() AppMCPService {
+	if sm.mcpService == nil {
+		sm.mcpService = NewMcpService(sm.svcCtx)
+	}
+	return sm.mcpService
 }

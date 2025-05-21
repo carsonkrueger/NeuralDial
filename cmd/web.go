@@ -12,6 +12,8 @@ import (
 	"github.com/carsonkrueger/main/router"
 	"github.com/carsonkrueger/main/services"
 	"github.com/haguro/elevenlabs-go"
+
+	// "github.com/mark3labs/mcp-go/server"
 	"github.com/tmc/langchaingo/llms/openai"
 
 	_ "github.com/lib/pq"
@@ -40,8 +42,7 @@ func web() {
 	}
 
 	elevenLabsClient := elevenlabs.NewClient(ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
-
-	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient, "../models/whisper")
+	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient, cfg.WhisperModelPath)
 
 	dm := DAO.NewDAOManager(db)
 	sm := services.NewServiceManager(nil, svcManagerCtx)

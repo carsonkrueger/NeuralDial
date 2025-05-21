@@ -8,3 +8,5 @@ jet
 .vscode
 .zed
 public/output.css
+whispercpp
+whisper.cpp

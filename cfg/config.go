@@ -15,6 +15,7 @@ type Config struct {
 	DbConfig         DbConfig
 	OpenAIAPIKey     string
 	ElevenLabsAPIKey string
+	WhisperModelPath string
 }
 
 type DbConfig struct {
@@ -40,6 +41,7 @@ func LoadConfig() Config {
 		Port:             os.Getenv("PORT"),
 		OpenAIAPIKey:     os.Getenv("OPENAI_API_KEY"),
 		ElevenLabsAPIKey: os.Getenv("ELEVEN_LABS_API_KEY"),
+		WhisperModelPath: os.Getenv("WHISPER_MODEL_PATH"),
 		DbConfig: DbConfig{
 			user:     os.Getenv("DB_USER"),
 			password: os.Getenv("DB_PASSWORD"),

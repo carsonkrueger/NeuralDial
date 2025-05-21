@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"github.com/carsonkrueger/main/models"
+	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
+	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/llms"
 )
 
@@ -42,7 +44,7 @@ func (l *llmService) StreamFromLLM(
 	msg string,
 	streamingFunc func(ctx context.Context, chunk []byte) error) (string, error) {
 
-	lgr := l.Lgr("llmService.Generate")
+	lgr := l.Lgr("llmService.StreamFromLLM")
 	lgr.Info("Called")
 
 	newMsg := l.BuildTextMessage(llms.ChatMessageTypeHuman, msg)
@@ -72,6 +74,18 @@ func (l *llmService) Generate(
 
 	newMsg := l.BuildTextMessage(llms.ChatMessageTypeHuman, msg)
 	previousChats.AddText(newMsg)
+
+	adapter, err := langchaingo_mcp_adapter.New(l.SM().MCPService().Client())
+	if err != nil {
+		return "", err
+	}
+
+	tools, err := adapter.Tools()
+	if err != nil {
+		return "", err
+	}
+
+	agents.NewConversationalAgent(l.llm, tools)
 
 	res, err := l.llm.GenerateContent(ctx, previousChats.Messages())
 	if err != nil {

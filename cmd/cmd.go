@@ -14,6 +14,8 @@ func Execute(cmd string) {
 		generateDAO()
 	case "genController":
 		generateController()
+	case "genService":
+		generateService()
 	default:
 		panic(fmt.Sprintf("Invalid cmd: %s", cmd))
 	}
