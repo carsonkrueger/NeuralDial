@@ -63,7 +63,7 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	r.SM().WebSocketService().StartConversation(conn)
+	// r.SM().WebSocketService().StartConversation(conn)
 
 	lgr.Info("Leaving...")
 }

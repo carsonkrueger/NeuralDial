@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -25,9 +26,14 @@ func NewWebSocketService(ctx ServiceContext) *webSocketService {
 func (ws *webSocketService) StartConversation(conn *websocket.Conn) {
 	lgr := ws.Lgr("StartConversation")
 	mutex := sync.Mutex{}
-	// llmStreamingModel := models.LLMStreamingModel{}
+	llmService := ws.SM().LLMService()
+	agent, memoryBuffer, err := llmService.NewConversationalAgent(nil)
+	if err != nil {
+		lgr.Error("Failed to create agent", zap.Error(err))
+		return
+	}
 
-	done := make(chan int)
+	done := make(chan bool)
 	defer close(done)
 
 	conn.SetPongHandler(func(string) error {
@@ -47,7 +53,7 @@ func (ws *webSocketService) StartConversation(conn *websocket.Conn) {
 				mutex.Unlock()
 				if err != nil {
 					lgr.Warn("No pong, closing connection...")
-					done <- 1
+					done <- true
 					break outer
 				}
 				lgr.Info("Pong")
@@ -63,31 +69,33 @@ outer:
 			break
 		default:
 			lgr.Info("Reading...")
+			ctx := context.Background()
+
 			msgType, reqBytes, err := conn.ReadMessage()
 			if err != nil {
 				lgr.Warn("No messages, closing connection...", zap.Error(err))
-				done <- 1
+				done <- true
 				break outer
 			}
 
-			if msgType != websocket.BinaryMessage {
+			if msgType != websocket.TextMessage {
 				lgr.Warn("Invalid websocket message type")
 				closeMsg := websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "Unsupported message type")
 				mutex.Lock()
 				conn.WriteMessage(websocket.CloseMessage, closeMsg)
 				mutex.Unlock()
-				done <- 1
+				done <- true
 				break outer
 			}
 
-			// msg := string(reqBytes)
+			msg := string(reqBytes)
 
-			// llmRes, err := r.SM().LLMService().Generate(ctx, &llmStreamingModel, msg)
-			// lgr.Info("Generate", zap.Any("Msg History:", llmStreamingModel.Messages()))
-			// if err != nil {
-			// 	lgr.Error("Could not generate LLM response", zap.Error(err))
-			// 	continue
-			// }
+			res, err := llmService.Generate(ctx, agent, memoryBuffer, msg)
+			if err != nil {
+				lgr.Error("Could not generate LLM response", zap.Error(err))
+				continue
+			}
+			resBytes := []byte(res)
 
 			// resBytes, err := r.SM().VoiceService().TextToSpeech(llmRes)
 			// if err != nil {
@@ -96,7 +104,7 @@ outer:
 			// }
 
 			mutex.Lock()
-			err = conn.WriteMessage(websocket.BinaryMessage, reqBytes)
+			err = conn.WriteMessage(websocket.BinaryMessage, resBytes)
 			mutex.Unlock()
 			if err != nil {
 				lgr.Error("Could not write message to connection", zap.Error(err))
