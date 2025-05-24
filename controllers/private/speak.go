@@ -7,7 +7,6 @@ import (
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
-	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
 )
 
@@ -56,12 +55,12 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr.Info("Called")
 	// ctx := req.Context()
 
-	conn, err := upgrader.Upgrade(res, req, nil)
-	if err != nil {
-		tools.HandleError(req, res, lgr, err, 500, "Error setting up websocket")
-		return
-	}
-	defer conn.Close()
+	// conn, err := upgrader.Upgrade(res, req, nil)
+	// if err != nil {
+	// 	tools.HandleError(req, res, lgr, err, 500, "Error setting up websocket")
+	// 	return
+	// }
+	// defer conn.Close()
 
 	// r.SM().WebSocketService().StartConversation(conn)
 

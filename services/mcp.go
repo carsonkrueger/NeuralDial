@@ -42,7 +42,7 @@ func NewMcpService(ctx ServiceContext) *appMCP {
 
 func (s *appMCP) loggingTool(ctx gctx.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	number := request.GetInt("number", 0)
-	fmt.Println(number)
+	fmt.Println("logging:", number)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			mcp.NewTextContent("logged"),
@@ -52,6 +52,7 @@ func (s *appMCP) loggingTool(ctx gctx.Context, request mcp.CallToolRequest) (*mc
 
 func (s *appMCP) webSearchTool(ctx gctx.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	url := request.GetString("url", "")
+	fmt.Println("searching url:", url)
 	if url == "" {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -60,7 +61,6 @@ func (s *appMCP) webSearchTool(ctx gctx.Context, request mcp.CallToolRequest) (*
 			IsError: true,
 		}, nil
 	}
-	fmt.Println(url)
 	// make request to url
 	res, err := http.Get(url)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *appMCP) webSearchTool(ctx gctx.Context, request mcp.CallToolRequest) (*
 		}, nil
 	}
 	defer res.Body.Close()
-	bodyBytes, err := io.ReadAll(io.LimitReader(res.Body, 1_000)) // 1MB limit for safety
+	bodyBytes, err := io.ReadAll(io.LimitReader(res.Body, 1_000)) // 1K byte limit for safety
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -82,7 +82,6 @@ func (s *appMCP) webSearchTool(ctx gctx.Context, request mcp.CallToolRequest) (*
 		}, nil
 	}
 	bodyText := string(bodyBytes)
-	fmt.Println(bodyText)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{

@@ -48,7 +48,13 @@ func (r *webText) textWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	r.SM().WebSocketService().StartConversation(conn)
+	llmService := r.SM().LLMService()
+	agent, memoryBuffer, err := llmService.NewConversationalAgent(nil)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 500, "Error creating agent")
+		return
+	}
 
-	lgr.Info("Leaving...")
+	webTextHandler, opts := llmService.WebTextHandler(&agent, memoryBuffer)
+	r.SM().WebSocketService().StartSocket(conn, webTextHandler, &opts)
 }

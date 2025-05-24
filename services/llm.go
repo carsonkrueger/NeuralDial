@@ -3,8 +3,11 @@ package services
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/carsonkrueger/main/models"
+	"github.com/carsonkrueger/main/tools"
+	"github.com/gorilla/websocket"
 	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
@@ -16,6 +19,7 @@ type LLMService interface {
 	StreamFromLLM(ctx context.Context, previousChats *models.LLMStreamingModel, msg string, streamingFunc func(ctx context.Context, chunk []byte) error) (string, error)
 	Generate(ctx context.Context, agent agents.Agent, memory *memory.ConversationBuffer, msg string) (string, error)
 	NewConversationalAgent(initialMessages []llms.ChatMessage) (agents.Agent, *memory.ConversationBuffer, error)
+	WebTextHandler(agent *agents.Agent, memory *memory.ConversationBuffer) (WebSocketHandler, models.WebSocketOptions)
 }
 
 type llmService struct {
@@ -92,4 +96,34 @@ func (l *llmService) Generate(ctx context.Context, agent agents.Agent, memoryBuf
 	}
 	memoryBuffer.ChatHistory.AddAIMessage(ctx, res)
 	return res, nil
+}
+
+func (llms *llmService) WebTextHandler(agent *agents.Agent, memory *memory.ConversationBuffer) (WebSocketHandler, models.WebSocketOptions) {
+	opts := models.WebSocketOptions{
+		PongDeadline:        tools.Ptr(10 * time.Minute),
+		PongInterval:        tools.Ptr(10 * time.Second),
+		AllowedMessageTypes: []int{websocket.TextMessage},
+	}
+	handler := webTextHandler{
+		agent:      agent,
+		mem:        memory,
+		llmService: llms,
+	}
+	return &handler, opts
+}
+
+type webTextHandler struct {
+	agent      *agents.Agent
+	mem        *memory.ConversationBuffer
+	llmService *llmService
+}
+
+func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
+	msg := string(req)
+	res, err := w.llmService.Generate(ctx, *w.agent, w.mem, msg)
+	if err != nil {
+		return 0, nil, err
+	}
+	resBytes := []byte(res)
+	return websocket.BinaryMessage, resBytes, nil
 }
