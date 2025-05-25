@@ -5,6 +5,7 @@ go 1.23.6
 require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/i2y/langchaingo-mcp-adapter v0.0.0-20250408100152-2fd6246dd090
+	github.com/openai/openai-go v1.1.0
 )
 
 require (
@@ -18,7 +19,7 @@ require (
 	github.com/mark3labs/mcp-go v0.29.0
 	github.com/tmc/langchaingo v0.1.13
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.29.0
+	golang.org/x/crypto v0.32.0
 )
 
 require (
@@ -46,11 +47,15 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -9,6 +9,8 @@ import (
 	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
 	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/shared"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
@@ -24,13 +26,15 @@ type LLMService interface {
 
 type llmService struct {
 	ServiceContext
-	llm llms.Model
+	llm          llms.Model
+	openaiClient *openai.Client
 }
 
-func NewLLMService(ctx ServiceContext, llm llms.Model) *llmService {
+func NewLLMService(ctx ServiceContext, llm llms.Model, openaiClient *openai.Client) *llmService {
 	return &llmService{
 		ctx,
 		llm,
+		openaiClient,
 	}
 }
 
@@ -112,6 +116,54 @@ func (llms *llmService) WebTextHandler(agent *agents.Agent, memory *memory.Conve
 	return &handler, opts
 }
 
+func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error) {
+	data := string(audio)
+	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
+		OfUser: &openai.ChatCompletionUserMessageParam{
+			Content: openai.ChatCompletionUserMessageParamContentUnion{
+				OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
+					openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
+						Data:   data,
+						Format: "wav",
+					}),
+				},
+			},
+		},
+	})
+	completion, err := l.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: *chatHistory,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfText: &shared.ResponseFormatTextParam{
+				Type: "wav",
+			},
+		},
+		Audio: openai.ChatCompletionAudioParam{
+			Format: "wav",
+			Voice:  "alloy",
+		},
+		Modalities: []string{"audio"},
+		Tools:      []openai.ChatCompletionToolParam{},
+	})
+	if err != nil {
+		return nil, err
+	}
+	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
+		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+			Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+				OfArrayOfContentParts: []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+					openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+						OfText: &openai.ChatCompletionContentPartTextParam{
+							Text: completion.Choices[0].Message.Content,
+							Type: "text",
+						},
+					},
+				},
+			},
+		},
+	})
+	return []byte(completion.Choices[0].Message.Audio.Data), nil
+}
+
 type webTextHandler struct {
 	agent      *agents.Agent
 	mem        *memory.ConversationBuffer
@@ -119,6 +171,23 @@ type webTextHandler struct {
 }
 
 func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
+	msg := string(req)
+	res, err := w.llmService.Generate(ctx, *w.agent, w.mem, msg)
+	if err != nil {
+		return 0, nil, err
+	}
+	resBytes := []byte(res)
+	return websocket.BinaryMessage, resBytes, nil
+}
+
+type webVoiceHandler struct {
+	agent             *agents.Agent
+	mem               *memory.ConversationBuffer
+	llmService        *llmService
+	elevenLabsService TextToVoiceConverter
+}
+
+func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
 	msg := string(req)
 	res, err := w.llmService.Generate(ctx, *w.agent, w.mem, msg)
 	if err != nil {

@@ -12,9 +12,11 @@ import (
 	"github.com/carsonkrueger/main/router"
 	"github.com/carsonkrueger/main/services"
 	"github.com/haguro/elevenlabs-go"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 
 	// "github.com/mark3labs/mcp-go/server"
-	"github.com/tmc/langchaingo/llms/openai"
+	lang_openai "github.com/tmc/langchaingo/llms/openai"
 
 	_ "github.com/lib/pq"
 )
@@ -33,16 +35,17 @@ func web() {
 		panic("Database connection is nil")
 	}
 
-	openAILLM, err := openai.New(
-		openai.WithToken(cfg.OpenAIAPIKey),
-		openai.WithModel("gpt-4o-mini"),
+	open4oMini, err := lang_openai.New(
+		lang_openai.WithToken(cfg.OpenAIAPIKey),
+		lang_openai.WithModel("gpt-4o-mini"),
 	)
-	if err != nil || openAILLM == nil {
+	openClient := openai.NewClient(option.WithAPIKey(cfg.OpenAIAPIKey))
+	if err != nil || open4oMini == nil {
 		panic(err)
 	}
 
 	elevenLabsClient := elevenlabs.NewClient(ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
-	svcManagerCtx := context.NewServiceManagerContext(openAILLM, elevenLabsClient, cfg.WhisperModelPath)
+	svcManagerCtx := context.NewServiceManagerContext(open4oMini, openClient, elevenLabsClient, cfg.WhisperModelPath)
 
 	dm := DAO.NewDAOManager(db)
 	sm := services.NewServiceManager(nil, svcManagerCtx)
