@@ -5,6 +5,8 @@ import (
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
+	"github.com/openai/openai-go"
+
 	// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 	"github.com/haguro/elevenlabs-go"
 	"github.com/tmc/langchaingo/llms"
@@ -14,6 +16,8 @@ import (
 type ServiceManagerContext interface {
 	PrimaryModel() llms.Model
 	ElevenLabsClient() *elevenlabs.Client
+	OpenaiClient() *openai.Client
+
 	// WhisperCPPModel() whisper.Model
 }
 
@@ -50,23 +54,19 @@ type ServiceManager interface {
 	PrivilegesService() PrivilegesService
 	LLMService() LLMService
 	PhoneService() PhoneService
-	TextToVoice() TextToVoiceConverter
-	SpeechToText() SpeechToTextConverter
 	WebSocketService() WebSocketService
 	MCPService() AppMCPService
 }
 
 type serviceManager struct {
-	usersService        UsersService
-	privilegesService   PrivilegesService
-	llmService          LLMService
-	phoneService        PhoneService
-	textToVoiceService  TextToVoiceConverter
-	speechToTextService SpeechToTextConverter
-	webSocketService    WebSocketService
-	mcpService          AppMCPService
-	svcCtx              ServiceContext
-	ctx                 ServiceManagerContext
+	usersService      UsersService
+	privilegesService PrivilegesService
+	llmService        LLMService
+	phoneService      PhoneService
+	webSocketService  WebSocketService
+	mcpService        AppMCPService
+	svcCtx            ServiceContext
+	ctx               ServiceManagerContext
 }
 
 func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContext) *serviceManager {
@@ -79,14 +79,6 @@ func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContex
 type PhoneService interface {
 	StartCall(ctx context.Context) error
 	EndCall(ctx context.Context) error
-}
-
-type TextToVoiceConverter interface {
-	TextToSpeech(msg string) ([]byte, error)
-}
-
-type SpeechToTextConverter interface {
-	SpeechToText(audio []byte) (string, error)
 }
 
 func (sm *serviceManager) SetAppContext(svcCtx ServiceContext) {
@@ -109,7 +101,7 @@ func (sm *serviceManager) PrivilegesService() PrivilegesService {
 
 func (sm *serviceManager) LLMService() LLMService {
 	if sm.llmService == nil {
-		sm.llmService = NewLLMService(sm.svcCtx, sm.ctx.PrimaryModel())
+		sm.llmService = NewLLMService(sm.svcCtx, sm.ctx.PrimaryModel(), sm.ctx.OpenaiClient())
 	}
 	return sm.llmService
 }
@@ -120,20 +112,6 @@ func (sm *serviceManager) PhoneService() PhoneService {
 		// sm.phoneService = NewTwilioService(sm.svcCtx)
 	}
 	return sm.phoneService
-}
-
-func (sm *serviceManager) TextToVoice() TextToVoiceConverter {
-	if sm.textToVoiceService == nil {
-		sm.textToVoiceService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
-	}
-	return sm.textToVoiceService
-}
-
-func (sm *serviceManager) SpeechToText() SpeechToTextConverter {
-	if sm.speechToTextService == nil {
-		// sm.speechToTextService = NewWhisperCPPService(sm.svcCtx, sm.ctx.WhisperCPPModel())
-	}
-	return sm.speechToTextService
 }
 
 func (sm *serviceManager) WebSocketService() WebSocketService {

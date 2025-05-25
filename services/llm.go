@@ -136,7 +136,7 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 			Format: "wav",
 			Voice:  "alloy",
 		},
-		Modalities: []string{"audio"},
+		Modalities: []string{"audio", "text"},
 		Model:      shared.ChatModelGPT4oAudioPreview,
 	})
 	if err != nil {
@@ -176,10 +176,9 @@ func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []b
 }
 
 type webVoiceHandler struct {
-	agent             *agents.Agent
-	mem               *memory.ConversationBuffer
-	llmService        *llmService
-	elevenLabsService TextToVoiceConverter
+	agent      *agents.Agent
+	mem        *memory.ConversationBuffer
+	llmService *llmService
 }
 
 func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
