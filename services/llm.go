@@ -132,17 +132,12 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 	})
 	completion, err := l.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: *chatHistory,
-		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
-			OfText: &shared.ResponseFormatTextParam{
-				Type: "wav",
-			},
-		},
 		Audio: openai.ChatCompletionAudioParam{
 			Format: "wav",
 			Voice:  "alloy",
 		},
 		Modalities: []string{"audio"},
-		Tools:      []openai.ChatCompletionToolParam{},
+		Model:      shared.ChatModelGPT4oAudioPreview,
 	})
 	if err != nil {
 		return nil, err
@@ -153,7 +148,7 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 				OfArrayOfContentParts: []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
 					openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
 						OfText: &openai.ChatCompletionContentPartTextParam{
-							Text: completion.Choices[0].Message.Content,
+							Text: completion.Choices[0].Message.Audio.Transcript,
 							Type: "text",
 						},
 					},
