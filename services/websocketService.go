@@ -71,7 +71,6 @@ outer:
 		default:
 			ctx := context.Background()
 			msgType, reqBytes, err := conn.ReadMessage()
-			lgr.Info("Reading...")
 			if err != nil {
 				lgr.Warn("No messages, closing connection...", zap.Error(err))
 				done <- true
@@ -112,6 +111,5 @@ outer:
 		}
 	}
 
-	lgr.Info("Closing connection...")
 	handler.HandleClose()
 }

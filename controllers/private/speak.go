@@ -56,7 +56,6 @@ var upgrader = websocket.Upgrader{
 func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakWebSocket")
 	lgr.Info("Called")
-	// ctx := req.Context()
 
 	conn, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {

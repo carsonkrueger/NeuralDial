@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/memory"
+	"go.uber.org/zap"
 )
 
 type LLMService interface {
@@ -135,10 +138,11 @@ func (llms *llmService) WebVoiceHandler(chatHistory *[]openai.ChatCompletionMess
 
 func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error) {
 	lgr := l.Lgr("Open4oAudioResponse")
-	data := string(audio)
+	data := base64.StdEncoding.EncodeToString(audio)
 	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: openai.ChatCompletionUserMessageParamContentUnion{
+				// OfString: openai.String("Hello there!"),
 				OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
 					openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
 						Data:   data,
@@ -155,7 +159,7 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 			Voice:  "alloy",
 		},
 		Modalities: []string{"audio", "text"},
-		Model:      shared.ChatModelGPT4oAudioPreview,
+		Model:      shared.ChatModelGPT4oAudioPreview2024_12_17,
 	})
 	if err != nil {
 		return nil, err
@@ -168,6 +172,8 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 		},
 	})
 	lgr.Debug(completion.Choices[0].Message.Audio.Transcript)
+	lgr.Debug("Choices", zap.Int("len", len(completion.Choices)))
+	lgr.Debug("choices[0]", zap.Int("content", len(completion.Choices[0].Message.Content)))
 	return []byte(completion.Choices[0].Message.Audio.Data), nil
 }
 
@@ -200,21 +206,14 @@ type webVoiceHandler struct {
 }
 
 func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
-	w.Lock()
-	now := time.Now()
-	lastSpeak := w.lastUserSpeak
-	w.lastUserSpeak = now
-	w.Unlock()
-	if now.Sub(lastSpeak) > w.waitDuration {
-		// res, err := w.SM().LLMService().Open4oAudioResponse(ctx, w.chatHistory, w.audioBuffer)
-		copy := w.audioBuffer
-		w.audioBuffer = []byte{}
-		// if err != nil {
-		// 	return nil, nil, err
-		// }
-		return tools.Ptr(websocket.BinaryMessage), copy, nil
+	fmt.Println("sending data to open ai", len(req))
+	res, err := w.SM().LLMService().Open4oAudioResponse(ctx, w.chatHistory, req)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil, nil, nil
+	return tools.Ptr(websocket.TextMessage), res, nil
+	// str := base64.StdEncoding.EncodeToString(req)
+	// return tools.Ptr(websocket.TextMessage), []byte(str), nil
 }
 
 func (w *webVoiceHandler) HandleClose() {}

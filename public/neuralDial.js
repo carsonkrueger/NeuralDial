@@ -94,3 +94,90 @@ function downSampleInt16Buffer(buffer, inputSampleRate, outputSampleRate) {
     }
     return result;
 }
+
+function decodeAndScheduleWav(base64Audio) {
+    if (!base64Audio) {
+        console.warn("Empty audio input");
+        return;
+    }
+
+    // const arrayBuffer = base64ToArrayBuffer();
+    const arrayBuffer = base64ToArrayBuffer(base64Audio);
+
+    audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+
+        const now = audioContext.currentTime;
+        if (lastPlaybackTime < now) {
+            lastPlaybackTime = now;
+        }
+
+        source.start(lastPlaybackTime);
+        lastPlaybackTime += audioBuffer.duration;
+    }, (error) => {
+        console.error("Failed to decode audio:", error);
+    });
+}
+
+function base64ToArrayBuffer(base64) {
+    // If the string has a data URI prefix, strip it
+    base64 = base64.includes(",") ? base64.split(",")[1] : base64;
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+function pcmToWav(pcmData, sampleRate = 44100, numChannels = 1, bitsPerSample = 16) {
+    const bytesPerSample = bitsPerSample / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = pcmData.length * bytesPerSample;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    function writeString(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    }
+
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+
+    // fmt subchunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // Subchunk1Size (PCM)
+    view.setUint16(20, 1, true); // Audio format (1 = PCM)
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+
+    // data subchunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // PCM data
+    let offset = 44;
+    for (let i = 0; i < pcmData.length; i++) {
+        view.setInt16(offset, pcmData[i], true); // little-endian
+        offset += 2;
+    }
+
+    return buffer;
+}
+
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}

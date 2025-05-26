@@ -7,31 +7,48 @@ templ Speak() {
 	    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 	    const sampleRate = 16000;
 		let lastPlaybackTime = audioContext.currentTime;
+		let buffer = new Int16Array(0);
+		let lastBufferTime = null;
+		const waitDurationMS = 1000;
 
 		speakws.onopen = () => {
             console.log("WebSocket connected");
             startSpeakingAudioStream(sendData, sampleRate);
 		};
 	    speakws.onmessage = (e) => {
-            if (e.data instanceof ArrayBuffer) {
-                console.log("Playing received audio");
-                scheduleBuffer(e.data);
-            } else {
-                console.warn("Unexpected msg type", e);
-            }
+            console.log("Playing received audio");
+            decodeAndScheduleWav(e.data);
 	    };
 	    speakws.onerror = (err) => console.error("WS error", err);
 
+		setInterval(() => {
+		    // if user has not spoken for waitDurationMS, send the buffer and play the response
+			if (lastBufferTime && Date.now() - lastBufferTime > waitDurationMS) {
+			    lastBufferTime = null;
+				const wavData = pcmToWav(buffer, sampleRate, 1, 16)
+				speakws.send(wavData);
+				buffer = new Int16Array(0);
+			}
+		}, 50);
+
 		function sendData(data) {
-			speakws.send(data.buffer)
+		    addBuffer(data)
 		}
 
-		function scheduleBuffer(buffer) {
-		    if (!buffer || buffer.length === 0) {
+		function addBuffer(data) {
+			newBuffer = new Int16Array(buffer.length + data.length);
+			newBuffer.set(buffer, 0);
+			newBuffer.set(data, buffer.length);
+			buffer = newBuffer;
+			lastBufferTime = Date.now();
+		}
+
+		function scheduleBuffer(buf) {
+		    if (!buf || buf.length === 0) {
 				console.warn("Empty buffer received");
 				return;
 		    }
-            int16Array = new Int16Array(buffer);
+            int16Array = new Int16Array(buf);
 		    const floatData = new Float32Array(int16Array.length);
 		    for (let i = 0; i < int16Array.length; i++) {
                 floatData[i] = int16Array[i] < 0
