@@ -5,6 +5,8 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/templates/pageLayouts"
+	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
 )
 
@@ -35,6 +37,9 @@ func (um *webText) PrivateRoute(b *builders.PrivateRouteBuilder) {
 func (r *webText) webTextGet(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("webTextGet")
 	lgr.Info("Called")
+	ctx := req.Context()
+	page := pageLayouts.Index(pages.TextChat())
+	page.Render(ctx, res)
 }
 
 func (r *webText) textWebSocket(res http.ResponseWriter, req *http.Request) {

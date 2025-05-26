@@ -1,32 +1,59 @@
 package pages
 
-templ ChatPage() {
-	@Speak()
-	@TextChat()
-}
-
 templ Speak() {
 	<script>
 	    let speakws = new WebSocket("/speak/ws");
 	    speakws.binaryType = "arraybuffer";
+	    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+	    const sampleRate = 16000;
+		let lastPlaybackTime = audioContext.currentTime;
 
 		speakws.onopen = () => {
             console.log("WebSocket connected");
-            startSpeakingAudioStream(sendData, 16000);
+            startSpeakingAudioStream(sendData, sampleRate);
 		};
-
 	    speakws.onmessage = (e) => {
             if (e.data instanceof ArrayBuffer) {
-                console.log("RECIEVING")
+                console.log("Playing received audio");
+                scheduleBuffer(e.data);
             } else {
                 console.warn("Unexpected msg type", e);
             }
 	    };
-
 	    speakws.onerror = (err) => console.error("WS error", err);
 
 		function sendData(data) {
-		    speakws.send(data)
+			speakws.send(data.buffer)
+		}
+
+		function scheduleBuffer(buffer) {
+		    if (!buffer || buffer.length === 0) {
+				console.warn("Empty buffer received");
+				return;
+		    }
+            int16Array = new Int16Array(buffer);
+		    const floatData = new Float32Array(int16Array.length);
+		    for (let i = 0; i < int16Array.length; i++) {
+                floatData[i] = int16Array[i] < 0
+                    ? int16Array[i] / 32768
+                    : int16Array[i] / 32767;
+		    }
+
+		    const audioBuffer = audioContext.createBuffer(1, floatData.length, sampleRate);
+		    audioBuffer.getChannelData(0).set(floatData);
+
+		    const source = audioContext.createBufferSource();
+		    source.buffer = audioBuffer;
+		    source.connect(audioContext.destination);
+
+			const now = audioContext.currentTime;
+			if (lastPlaybackTime < now) {
+                lastPlaybackTime = now;
+			}
+
+		    // Schedule it to play after the previous chunk
+		    source.start(lastPlaybackTime);
+		    lastPlaybackTime += audioBuffer.duration;
 		}
 	</script>
 }
@@ -59,7 +86,7 @@ templ TextChat() {
 	<div class="flex flex-col gap-2 bg-black h-screen text-white">
 		<button onclick="SendInput()" class="border border-gray-100">Text</button>
 		<textarea id="textWeb" rows="15" class="border border-gray-100"></textarea>
-		response
+			response
 		<textarea id="textWebResponse" rows="15" class="border border-gray-100"></textarea>
 	</div>
 }

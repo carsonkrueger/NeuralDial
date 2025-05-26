@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/carsonkrueger/main/models"
@@ -22,6 +23,8 @@ type LLMService interface {
 	Generate(ctx context.Context, agent agents.Agent, memory *memory.ConversationBuffer, msg string) (string, error)
 	NewConversationalAgent(initialMessages []llms.ChatMessage) (agents.Agent, *memory.ConversationBuffer, error)
 	WebTextHandler(agent *agents.Agent, memory *memory.ConversationBuffer) (WebSocketHandler, models.WebSocketOptions)
+	WebVoiceHandler(chatHistory *[]openai.ChatCompletionMessageParamUnion, waitDuration time.Duration) (WebSocketHandler, models.WebSocketOptions)
+	Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error)
 }
 
 type llmService struct {
@@ -109,14 +112,29 @@ func (llms *llmService) WebTextHandler(agent *agents.Agent, memory *memory.Conve
 		AllowedMessageTypes: []int{websocket.TextMessage},
 	}
 	handler := webTextHandler{
-		agent:      agent,
-		mem:        memory,
-		llmService: llms,
+		agent:          agent,
+		mem:            memory,
+		ServiceContext: llms.ServiceContext,
+	}
+	return &handler, opts
+}
+
+func (llms *llmService) WebVoiceHandler(chatHistory *[]openai.ChatCompletionMessageParamUnion, waitDuration time.Duration) (WebSocketHandler, models.WebSocketOptions) {
+	opts := models.WebSocketOptions{
+		PongDeadline:        tools.Ptr(10 * time.Minute),
+		PongInterval:        tools.Ptr(10 * time.Second),
+		AllowedMessageTypes: []int{websocket.BinaryMessage},
+	}
+	handler := webVoiceHandler{
+		waitDuration:   waitDuration,
+		chatHistory:    chatHistory,
+		ServiceContext: llms.ServiceContext,
 	}
 	return &handler, opts
 }
 
 func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error) {
+	lgr := l.Lgr("Open4oAudioResponse")
 	data := string(audio)
 	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
@@ -144,49 +162,59 @@ func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]ope
 	}
 	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-			Content: openai.ChatCompletionAssistantMessageParamContentUnion{
-				OfArrayOfContentParts: []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
-					openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
-						OfText: &openai.ChatCompletionContentPartTextParam{
-							Text: completion.Choices[0].Message.Audio.Transcript,
-							Type: "text",
-						},
-					},
-				},
+			Audio: openai.ChatCompletionAssistantMessageParamAudio{
+				ID: completion.Choices[0].Message.Audio.ID,
 			},
 		},
 	})
+	lgr.Debug(completion.Choices[0].Message.Audio.Transcript)
 	return []byte(completion.Choices[0].Message.Audio.Data), nil
 }
 
 type webTextHandler struct {
-	agent      *agents.Agent
-	mem        *memory.ConversationBuffer
-	llmService *llmService
+	agent *agents.Agent
+	mem   *memory.ConversationBuffer
+	ServiceContext
 }
 
-func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
+func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
 	msg := string(req)
-	res, err := w.llmService.Generate(ctx, *w.agent, w.mem, msg)
+	res, err := w.SM().LLMService().Generate(ctx, *w.agent, w.mem, msg)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	resBytes := []byte(res)
-	return websocket.BinaryMessage, resBytes, nil
+	return tools.Ptr(websocket.BinaryMessage), resBytes, nil
 }
+
+func (w *webTextHandler) HandleClose() {}
 
 type webVoiceHandler struct {
-	agent      *agents.Agent
-	mem        *memory.ConversationBuffer
-	llmService *llmService
+	waitDuration  time.Duration
+	lastUserSpeak time.Time
+	audioBuffer   []byte
+	chatHistory   *[]openai.ChatCompletionMessageParamUnion
+	take          chan bool
+	sync.Mutex
+	ServiceContext
 }
 
-func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error) {
-	msg := string(req)
-	res, err := w.llmService.Generate(ctx, *w.agent, w.mem, msg)
-	if err != nil {
-		return 0, nil, err
+func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
+	w.Lock()
+	now := time.Now()
+	lastSpeak := w.lastUserSpeak
+	w.lastUserSpeak = now
+	w.Unlock()
+	if now.Sub(lastSpeak) > w.waitDuration {
+		// res, err := w.SM().LLMService().Open4oAudioResponse(ctx, w.chatHistory, w.audioBuffer)
+		copy := w.audioBuffer
+		w.audioBuffer = []byte{}
+		// if err != nil {
+		// 	return nil, nil, err
+		// }
+		return tools.Ptr(websocket.BinaryMessage), copy, nil
 	}
-	resBytes := []byte(res)
-	return websocket.BinaryMessage, resBytes, nil
+	return nil, nil, nil
 }
+
+func (w *webVoiceHandler) HandleClose() {}

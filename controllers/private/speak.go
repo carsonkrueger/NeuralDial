@@ -2,12 +2,15 @@ package private
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
+	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
+	"github.com/openai/openai-go"
 )
 
 const (
@@ -41,7 +44,7 @@ func (r *speak) speakGet(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakGet")
 	lgr.Info("Called")
 	ctx := req.Context()
-	page := pageLayouts.Index(pages.ChatPage())
+	page := pageLayouts.Index(pages.Speak())
 	page.Render(ctx, res)
 }
 
@@ -55,14 +58,16 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr.Info("Called")
 	// ctx := req.Context()
 
-	// conn, err := upgrader.Upgrade(res, req, nil)
-	// if err != nil {
-	// 	tools.HandleError(req, res, lgr, err, 500, "Error setting up websocket")
-	// 	return
-	// }
-	// defer conn.Close()
+	conn, err := upgrader.Upgrade(res, req, nil)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 500, "Error setting up websocket")
+		return
+	}
+	defer conn.Close()
 
-	// r.SM().WebSocketService().StartConversation(conn)
+	history := []openai.ChatCompletionMessageParamUnion{}
+	handler, opts := r.SM().LLMService().WebVoiceHandler(&history, 1*time.Second)
+	r.SM().WebSocketService().StartSocket(conn, handler, &opts)
 
 	lgr.Info("Leaving...")
 }

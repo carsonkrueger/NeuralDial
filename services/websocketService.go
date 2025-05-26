@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -26,7 +27,8 @@ func NewWebSocketService(ctx ServiceContext) *webSocketService {
 }
 
 type WebSocketHandler interface {
-	HandleRequest(ctx context.Context, msgType int, req []byte) (int, []byte, error)
+	HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error)
+	HandleClose()
 }
 
 func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions) {
@@ -77,7 +79,7 @@ outer:
 			}
 
 			if len(opts.AllowedMessageTypes) > 0 && !slices.Contains(opts.AllowedMessageTypes, msgType) {
-				lgr.Warn("Invalid websocket message type")
+				lgr.Warn(fmt.Sprintf("Invalid websocket message type: %d", msgType))
 				closeMsg := websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "Unsupported message type")
 				mutex.Lock()
 				conn.WriteMessage(websocket.CloseMessage, closeMsg)
@@ -96,8 +98,12 @@ outer:
 				continue
 			}
 
+			if resType == nil || resBytes == nil {
+				continue
+			}
+
 			mutex.Lock()
-			err = conn.WriteMessage(resType, resBytes)
+			err = conn.WriteMessage(*resType, resBytes)
 			mutex.Unlock()
 			if err != nil {
 				lgr.Error("Could not write message to connection", zap.Error(err))
@@ -107,4 +113,5 @@ outer:
 	}
 
 	lgr.Info("Closing connection...")
+	handler.HandleClose()
 }
