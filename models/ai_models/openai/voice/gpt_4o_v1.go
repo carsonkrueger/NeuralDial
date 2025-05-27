@@ -3,6 +3,7 @@ package voice
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -15,20 +16,21 @@ import (
 )
 
 type gpt4oV1 struct {
+	sync.Mutex
 	waitDuration  time.Duration
 	lastUserSpeak time.Time
 	audioBuffer   []byte
 	chatHistory   *[]openai.ChatCompletionMessageParamUnion
-	take          chan bool
-	sync.Mutex
 	services.ServiceContext
-	openaiClient openai.Client
+	openaiClient *openai.Client
 }
 
-func NewGPT4oV1(svcCtx services.ServiceContext, waitDuration time.Duration) *gpt4oV1 {
+func NewGPT4oV1(svcCtx services.ServiceContext, waitDuration time.Duration, client *openai.Client) *gpt4oV1 {
 	return &gpt4oV1{
 		waitDuration:   waitDuration,
 		ServiceContext: svcCtx,
+		chatHistory:    &[]openai.ChatCompletionMessageParamUnion{},
+		openaiClient:   client,
 	}
 }
 
@@ -50,11 +52,14 @@ func (m *gpt4oV1) SaveUserResponse(ctx context.Context, res []byte) error {
 	return nil
 }
 
-func (m *gpt4oV1) SaveAssistantResponse(ctx context.Context, res []byte) error {
+func (m *gpt4oV1) SaveAssistantResponse(ctx context.Context, id *string, res []byte) error {
+	if id == nil {
+		return errors.New("id is nil")
+	}
 	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 			Audio: openai.ChatCompletionAssistantMessageParamAudio{
-				ID: string(res),
+				ID: *id,
 			},
 		},
 	})
@@ -62,17 +67,17 @@ func (m *gpt4oV1) SaveAssistantResponse(ctx context.Context, res []byte) error {
 }
 
 func (m *gpt4oV1) SaveAssistantStreamResponse(ctx context.Context, res []byte) error {
-	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
-		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-			Audio: openai.ChatCompletionAssistantMessageParamAudio{
-				ID: string(res),
-			},
-		},
-	})
+	// *m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
+	// 	OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+	// 		Audio: openai.ChatCompletionAssistantMessageParamAudio{
+	// 			// ID: string(res),
+	// 		},
+	// 	},
+	// })
 	return nil
 }
 
-func (m *gpt4oV1) Generate(ctx context.Context, req []byte) ([]byte, error) {
+func (m *gpt4oV1) Generate(ctx context.Context, req []byte) (*string, []byte, error) {
 	completion, err := m.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: *m.chatHistory,
 		Audio: openai.ChatCompletionAudioParam{
@@ -80,56 +85,48 @@ func (m *gpt4oV1) Generate(ctx context.Context, req []byte) ([]byte, error) {
 			Voice:  "alloy",
 		},
 		Modalities: []string{"audio", "text"},
-		Model:      shared.ChatModelGPT4oAudioPreview2024_12_17,
+		Model:      shared.ChatModelGPT4oMiniAudioPreview,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return []byte(completion.Choices[0].Message.Audio.Data), nil
+	return &completion.Choices[0].Message.Audio.ID, []byte(completion.Choices[0].Message.Audio.Data), nil
 }
 
 func (m *gpt4oV1) GenerateStream(ctx context.Context, res []byte, out chan<- services.StreamResponse) ([]byte, error) {
-	data := base64.StdEncoding.EncodeToString(res)
-	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
-		OfUser: &openai.ChatCompletionUserMessageParam{
-			Content: openai.ChatCompletionUserMessageParamContentUnion{
-				// OfString: openai.String("Hello there!"),
-				OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
-					openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
-						Data:   data,
-						Format: "wav",
-					}),
-				},
-			},
-		},
-	})
+	fmt.Println("acquiring stream...")
 	stream := m.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages: *m.chatHistory,
 		Audio: openai.ChatCompletionAudioParam{
-			Format: "wav",
+			Format: "pcm16",
 			Voice:  "alloy",
 		},
-		Modalities: []string{"audio", "text"},
-		Model:      shared.ChatModelGPT4oAudioPreview2024_12_17,
+		Modalities: []string{"text", "audio"},
+		Model:      shared.ChatModelGPT4oMiniAudioPreview,
 	})
+	fmt.Println("stream acquired")
 	defer stream.Close()
 
 	fullResponse := []byte{}
 	currentResponse := services.StreamResponse{}
 
-	go func() {
+	defer func() {
 		currentResponse.Data = nil
 		currentResponse.MsgType = nil
 		currentResponse.Done = true
 		out <- currentResponse
 	}()
 
+	fmt.Println("listening...")
+
 	for stream.Next() {
+		fmt.Println("next...")
 		if err := stream.Err(); err != nil {
 			return nil, err
 		}
 		chunk := stream.Current()
+		fmt.Println(len(chunk.Choices[0].Delta.Content))
+		fmt.Println(chunk.Choices[0].Delta.Content)
 		data := []byte(chunk.Choices[0].Delta.Content)
 		fullResponse = append(fullResponse, data...)
 		currentResponse.Data = data

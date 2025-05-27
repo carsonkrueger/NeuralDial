@@ -15,3 +15,11 @@ func NewTextOptions() models.WebSocketOptions {
 		AllowedMessageTypes: []int{websocket.TextMessage},
 	}
 }
+
+func NewVoiceOptions() models.WebSocketOptions {
+	return models.WebSocketOptions{
+		PongDeadline:        tools.Ptr(1 * time.Minute),
+		PongInterval:        tools.Ptr(8 * time.Second),
+		AllowedMessageTypes: []int{websocket.BinaryMessage},
+	}
+}

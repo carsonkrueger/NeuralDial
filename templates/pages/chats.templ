@@ -9,7 +9,7 @@ templ Speak() {
 		let lastPlaybackTime = audioContext.currentTime;
 		let buffer = new Int16Array(0);
 		let lastBufferTime = null;
-		const waitDurationMS = 1000;
+		const waitDurationMS = 500;
 
 		speakws.onopen = () => {
             console.log("WebSocket connected");
@@ -17,7 +17,8 @@ templ Speak() {
 		};
 	    speakws.onmessage = (e) => {
             console.log("Playing received audio");
-            decodeAndScheduleWav(e.data);
+            // decodeAndScheduleWav(e.data);
+            scheduleBuffer(e.data)
 	    };
 	    speakws.onerror = (err) => console.error("WS error", err);
 

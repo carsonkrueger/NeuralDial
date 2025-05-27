@@ -65,10 +65,10 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	// history := []openai.ChatCompletionMessageParamUnion{}
-	handler := voice.NewGPT4oV1(r.AppContext, time.Second*1)
-	opts := openai.NewTextOptions()
-	r.SM().WebSocketService().StartSocket(conn, handler, &opts)
+	handler := voice.NewGPT4oV1(r.AppContext, time.Second*1, r.SM().LLMService().OpenaiClient())
+	opts := openai.NewVoiceOptions()
+	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler, &opts)
+	// r.SM().WebSocketService().StartSocket(conn, handler, &opts)
 
 	lgr.Info("Leaving...")
 }

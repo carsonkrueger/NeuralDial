@@ -8,10 +8,11 @@ import (
 )
 
 type Generator interface {
-	Generate(ctx context.Context, res []byte) ([]byte, error)
+	Generate(ctx context.Context, res []byte) (*string, []byte, error)
 }
 
 type StreamGenerator interface {
+	// return type *string is ID of assistant response if any
 	GenerateStream(ctx context.Context, res []byte, out chan<- StreamResponse) ([]byte, error)
 }
 
@@ -20,7 +21,7 @@ type AssistantStreamMemoryHandler interface {
 }
 
 type AssistantMemoryHandler interface {
-	SaveAssistantResponse(ctx context.Context, res []byte) error
+	SaveAssistantResponse(ctx context.Context, id *string, res []byte) error
 }
 
 type UserMemoryHandler interface {
@@ -43,6 +44,7 @@ type LLMService interface {
 	GenerateResponse(ctx context.Context, model NeuralDialModel, req []byte) ([]byte, error)
 	GenerateResponseStream(ctx context.Context, model NeuralDialStreamModel, req []byte, out chan<- StreamResponse) error
 	LLM() llms.Model
+	OpenaiClient() *openai.Client
 }
 
 type llmService struct {
@@ -74,11 +76,11 @@ func (l *llmService) GenerateResponse(ctx context.Context, model NeuralDialModel
 	if err := model.SaveUserResponse(ctx, req); err != nil {
 		return nil, err
 	}
-	res, err := model.Generate(ctx, req)
+	id, res, err := model.Generate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	if err := model.SaveAssistantResponse(ctx, res); err != nil {
+	if err := model.SaveAssistantResponse(ctx, id, res); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -100,4 +102,8 @@ func (l *llmService) GenerateResponseStream(ctx context.Context, model NeuralDia
 
 func (w *llmService) LLM() llms.Model {
 	return w.llm
+}
+
+func (w *llmService) OpenaiClient() *openai.Client {
+	return w.openaiClient
 }

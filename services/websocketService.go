@@ -14,6 +14,7 @@ import (
 
 type WebSocketService interface {
 	StartSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions)
+	StartStreamingResponseSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions)
 }
 
 type webSocketService struct {
@@ -29,7 +30,9 @@ func NewWebSocketService(ctx ServiceContext) *webSocketService {
 type StreamResponse struct {
 	MsgType *int
 	Done    bool
-	Data    []byte
+	// id of data if any
+	ID   *string
+	Data []byte
 }
 
 type WebSocketHandler interface {
@@ -178,15 +181,15 @@ outer:
 			}
 
 			ch := make(chan StreamResponse)
-			err = handler.HandleRequestWithStreaming(ctx, msgType, reqBytes, ch)
-			if err != nil {
-				lgr.Error("Could not handle request with streaming", zap.Error(err))
-				if opts.CloseOnHandleError {
-					done <- true
-					break outer
+			go func() {
+				handler.HandleRequestWithStreaming(ctx, msgType, reqBytes, ch)
+				if err != nil {
+					lgr.Error("Could not handle request with streaming", zap.Error(err))
+					if opts.CloseOnHandleError {
+						done <- true
+					}
 				}
-				continue
-			}
+			}()
 
 			for v := range ch {
 				if v.MsgType == nil || v.Data == nil {
