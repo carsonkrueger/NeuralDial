@@ -2,32 +2,47 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
-	"errors"
-	"fmt"
-	"sync"
-	"time"
 
-	"github.com/carsonkrueger/main/models"
-	"github.com/carsonkrueger/main/tools"
-	"github.com/gorilla/websocket"
-	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
 	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
-	"github.com/tmc/langchaingo/agents"
-	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/memory"
-	"go.uber.org/zap"
 )
 
+type Generator interface {
+	Generate(ctx context.Context, res []byte) ([]byte, error)
+}
+
+type StreamGenerator interface {
+	GenerateStream(ctx context.Context, res []byte, out chan<- StreamResponse) ([]byte, error)
+}
+
+type AssistantStreamMemoryHandler interface {
+	SaveAssistantStreamResponse(ctx context.Context, res []byte) error
+}
+
+type AssistantMemoryHandler interface {
+	SaveAssistantResponse(ctx context.Context, res []byte) error
+}
+
+type UserMemoryHandler interface {
+	SaveUserResponse(ctx context.Context, res []byte) error
+}
+
+type NeuralDialModel interface {
+	UserMemoryHandler
+	AssistantMemoryHandler
+	Generator
+}
+
+type NeuralDialStreamModel interface {
+	UserMemoryHandler
+	AssistantStreamMemoryHandler
+	StreamGenerator
+}
+
 type LLMService interface {
-	StreamFromLLM(ctx context.Context, previousChats *models.LLMStreamingModel, msg string, streamingFunc func(ctx context.Context, chunk []byte) error) (string, error)
-	Generate(ctx context.Context, agent agents.Agent, memory *memory.ConversationBuffer, msg string) (string, error)
-	NewConversationalAgent(initialMessages []llms.ChatMessage) (agents.Agent, *memory.ConversationBuffer, error)
-	WebTextHandler(agent *agents.Agent, memory *memory.ConversationBuffer) (WebSocketHandler, models.WebSocketOptions)
-	WebVoiceHandler(chatHistory *[]openai.ChatCompletionMessageParamUnion, waitDuration time.Duration) (WebSocketHandler, models.WebSocketOptions)
-	Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error)
+	GenerateResponse(ctx context.Context, model NeuralDialModel, req []byte) ([]byte, error)
+	GenerateResponseStream(ctx context.Context, model NeuralDialStreamModel, req []byte, out chan<- StreamResponse) error
+	LLM() llms.Model
 }
 
 type llmService struct {
@@ -55,165 +70,34 @@ func (l *llmService) BuildTextMessage(role llms.ChatMessageType, msg string, msg
 	return msgContent
 }
 
-func (l *llmService) StreamFromLLM(
-	ctx context.Context,
-	previousChats *models.LLMStreamingModel,
-	msg string,
-	streamingFunc func(ctx context.Context, chunk []byte) error) (string, error) {
-
-	lgr := l.Lgr("llmService.StreamFromLLM")
-	lgr.Info("Called")
-
-	newMsg := l.BuildTextMessage(llms.ChatMessageTypeHuman, msg)
-	previousChats.AddText(newMsg)
-
-	streamOption := llms.WithStreamingFunc(streamingFunc)
-	res, err := l.llm.GenerateContent(ctx, previousChats.Messages(), streamOption)
-	if err != nil {
-		return "", err
-	} else if res == nil || len(res.Choices) == 0 {
-		return "", errors.New("no response returned")
+func (l *llmService) GenerateResponse(ctx context.Context, model NeuralDialModel, req []byte) ([]byte, error) {
+	if err := model.SaveUserResponse(ctx, req); err != nil {
+		return nil, err
 	}
-
-	aiMsg := l.BuildTextMessage(llms.ChatMessageTypeAI, res.Choices[0].Content)
-	previousChats.AddText(aiMsg)
-
-	return res.Choices[0].Content, nil
-}
-
-func (l *llmService) NewConversationalAgent(initialMessages []llms.ChatMessage) (agents.Agent, *memory.ConversationBuffer, error) {
-	adapter, err := langchaingo_mcp_adapter.New(l.SM().MCPService().Client())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tools, err := adapter.Tools()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	mem := memory.NewChatMessageHistory(memory.WithPreviousMessages(initialMessages))
-	memoryBuffer := memory.NewConversationBuffer(memory.WithChatHistory(mem))
-	return agents.NewConversationalAgent(l.llm, tools), memoryBuffer, nil
-}
-
-func (l *llmService) Generate(ctx context.Context, agent agents.Agent, memoryBuffer *memory.ConversationBuffer, msg string) (string, error) {
-	memoryBuffer.ChatHistory.AddUserMessage(ctx, msg)
-	executor := agents.NewExecutor(agent, agents.WithMemory(memoryBuffer))
-	res, err := chains.Run(ctx, executor, msg)
-	if err != nil {
-		return "", err
-	}
-	memoryBuffer.ChatHistory.AddAIMessage(ctx, res)
-	return res, nil
-}
-
-func (llms *llmService) WebTextHandler(agent *agents.Agent, memory *memory.ConversationBuffer) (WebSocketHandler, models.WebSocketOptions) {
-	opts := models.WebSocketOptions{
-		PongDeadline:        tools.Ptr(10 * time.Minute),
-		PongInterval:        tools.Ptr(10 * time.Second),
-		AllowedMessageTypes: []int{websocket.TextMessage},
-	}
-	handler := webTextHandler{
-		agent:          agent,
-		mem:            memory,
-		ServiceContext: llms.ServiceContext,
-	}
-	return &handler, opts
-}
-
-func (llms *llmService) WebVoiceHandler(chatHistory *[]openai.ChatCompletionMessageParamUnion, waitDuration time.Duration) (WebSocketHandler, models.WebSocketOptions) {
-	opts := models.WebSocketOptions{
-		PongDeadline:        tools.Ptr(10 * time.Minute),
-		PongInterval:        tools.Ptr(10 * time.Second),
-		AllowedMessageTypes: []int{websocket.BinaryMessage},
-	}
-	handler := webVoiceHandler{
-		waitDuration:   waitDuration,
-		chatHistory:    chatHistory,
-		ServiceContext: llms.ServiceContext,
-	}
-	return &handler, opts
-}
-
-func (l *llmService) Open4oAudioResponse(ctx context.Context, chatHistory *[]openai.ChatCompletionMessageParamUnion, audio []byte) ([]byte, error) {
-	lgr := l.Lgr("Open4oAudioResponse")
-	data := base64.StdEncoding.EncodeToString(audio)
-	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
-		OfUser: &openai.ChatCompletionUserMessageParam{
-			Content: openai.ChatCompletionUserMessageParamContentUnion{
-				// OfString: openai.String("Hello there!"),
-				OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
-					openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
-						Data:   data,
-						Format: "wav",
-					}),
-				},
-			},
-		},
-	})
-	completion, err := l.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Messages: *chatHistory,
-		Audio: openai.ChatCompletionAudioParam{
-			Format: "wav",
-			Voice:  "alloy",
-		},
-		Modalities: []string{"audio", "text"},
-		Model:      shared.ChatModelGPT4oAudioPreview2024_12_17,
-	})
+	res, err := model.Generate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	*chatHistory = append(*chatHistory, openai.ChatCompletionMessageParamUnion{
-		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-			Audio: openai.ChatCompletionAssistantMessageParamAudio{
-				ID: completion.Choices[0].Message.Audio.ID,
-			},
-		},
-	})
-	lgr.Debug(completion.Choices[0].Message.Audio.Transcript)
-	lgr.Debug("Choices", zap.Int("len", len(completion.Choices)))
-	lgr.Debug("choices[0]", zap.Int("content", len(completion.Choices[0].Message.Content)))
-	return []byte(completion.Choices[0].Message.Audio.Data), nil
-}
-
-type webTextHandler struct {
-	agent *agents.Agent
-	mem   *memory.ConversationBuffer
-	ServiceContext
-}
-
-func (w *webTextHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
-	msg := string(req)
-	res, err := w.SM().LLMService().Generate(ctx, *w.agent, w.mem, msg)
-	if err != nil {
-		return nil, nil, err
+	if err := model.SaveAssistantResponse(ctx, res); err != nil {
+		return nil, err
 	}
-	resBytes := []byte(res)
-	return tools.Ptr(websocket.BinaryMessage), resBytes, nil
+	return res, nil
 }
 
-func (w *webTextHandler) HandleClose() {}
-
-type webVoiceHandler struct {
-	waitDuration  time.Duration
-	lastUserSpeak time.Time
-	audioBuffer   []byte
-	chatHistory   *[]openai.ChatCompletionMessageParamUnion
-	take          chan bool
-	sync.Mutex
-	ServiceContext
-}
-
-func (w *webVoiceHandler) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
-	fmt.Println("sending data to open ai", len(req))
-	res, err := w.SM().LLMService().Open4oAudioResponse(ctx, w.chatHistory, req)
-	if err != nil {
-		return nil, nil, err
+func (l *llmService) GenerateResponseStream(ctx context.Context, model NeuralDialStreamModel, req []byte, out chan<- StreamResponse) error {
+	if err := model.SaveUserResponse(ctx, req); err != nil {
+		return err
 	}
-	return tools.Ptr(websocket.TextMessage), res, nil
-	// str := base64.StdEncoding.EncodeToString(req)
-	// return tools.Ptr(websocket.TextMessage), []byte(str), nil
+	res, err := model.GenerateStream(ctx, req, out)
+	if err != nil {
+		return err
+	}
+	if err := model.SaveAssistantStreamResponse(ctx, res); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (w *webVoiceHandler) HandleClose() {}
+func (w *llmService) LLM() llms.Model {
+	return w.llm
+}

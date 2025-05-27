@@ -5,6 +5,9 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/models/ai_agents"
+	"github.com/carsonkrueger/main/models/ai_models/openai"
+	"github.com/carsonkrueger/main/models/ai_models/openai/text"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
@@ -53,13 +56,15 @@ func (r *webText) textWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	llmService := r.SM().LLMService()
-	agent, memoryBuffer, err := llmService.NewConversationalAgent(nil)
+	mcpClient := r.SM().MCPService().Client()
+	llm := r.SM().LLMService().LLM()
+	agent, memoryBuffer, err := ai_agents.NewLangChainConversationalAgent(nil, mcpClient, llm)
 	if err != nil {
 		tools.HandleError(req, res, lgr, err, 500, "Error creating agent")
 		return
 	}
 
-	webTextHandler, opts := llmService.WebTextHandler(&agent, memoryBuffer)
-	r.SM().WebSocketService().StartSocket(conn, webTextHandler, &opts)
+	opts := openai.NewTextOptions()
+	textHandler := text.NewGPT4oV1(&agent, memoryBuffer, r.AppContext)
+	r.SM().WebSocketService().StartSocket(conn, textHandler, &opts)
 }
