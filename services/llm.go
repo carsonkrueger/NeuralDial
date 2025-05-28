@@ -1,48 +1,11 @@
 package services
 
 import (
-	"context"
-
 	"github.com/openai/openai-go"
 	"github.com/tmc/langchaingo/llms"
 )
 
-type Generator interface {
-	Generate(ctx context.Context, res []byte) (*string, []byte, error)
-}
-
-type StreamGenerator interface {
-	// return type *string is ID of assistant response if any
-	GenerateStream(ctx context.Context, res []byte, out chan<- StreamResponse) ([]byte, error)
-}
-
-type AssistantStreamMemoryHandler interface {
-	SaveAssistantStreamResponse(ctx context.Context, res []byte) error
-}
-
-type AssistantMemoryHandler interface {
-	SaveAssistantResponse(ctx context.Context, id *string, res []byte) error
-}
-
-type UserMemoryHandler interface {
-	SaveUserResponse(ctx context.Context, res []byte) error
-}
-
-type NeuralDialModel interface {
-	UserMemoryHandler
-	AssistantMemoryHandler
-	Generator
-}
-
-type NeuralDialStreamModel interface {
-	UserMemoryHandler
-	AssistantStreamMemoryHandler
-	StreamGenerator
-}
-
 type LLMService interface {
-	GenerateResponse(ctx context.Context, model NeuralDialModel, req []byte) ([]byte, error)
-	GenerateResponseStream(ctx context.Context, model NeuralDialStreamModel, req []byte, out chan<- StreamResponse) error
 	LLM() llms.Model
 	OpenaiClient() *openai.Client
 }
@@ -70,34 +33,6 @@ func (l *llmService) BuildTextMessage(role llms.ChatMessageType, msg string, msg
 		msgContent.Parts = append(msgContent.Parts, llms.TextPart(msgs[i]))
 	}
 	return msgContent
-}
-
-func (l *llmService) GenerateResponse(ctx context.Context, model NeuralDialModel, req []byte) ([]byte, error) {
-	if err := model.SaveUserResponse(ctx, req); err != nil {
-		return nil, err
-	}
-	id, res, err := model.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if err := model.SaveAssistantResponse(ctx, id, res); err != nil {
-		return nil, err
-	}
-	return res, nil
-}
-
-func (l *llmService) GenerateResponseStream(ctx context.Context, model NeuralDialStreamModel, req []byte, out chan<- StreamResponse) error {
-	if err := model.SaveUserResponse(ctx, req); err != nil {
-		return err
-	}
-	res, err := model.GenerateStream(ctx, req, out)
-	if err != nil {
-		return err
-	}
-	if err := model.SaveAssistantStreamResponse(ctx, res); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (w *llmService) LLM() llms.Model {

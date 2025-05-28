@@ -56,6 +56,7 @@ type ServiceManager interface {
 	PhoneService() PhoneService
 	WebSocketService() WebSocketService
 	MCPService() AppMCPService
+	ElevenLabsService() ElevenLabsService
 }
 
 type serviceManager struct {
@@ -65,6 +66,7 @@ type serviceManager struct {
 	phoneService      PhoneService
 	webSocketService  WebSocketService
 	mcpService        AppMCPService
+	elevenLabsService ElevenLabsService
 	svcCtx            ServiceContext
 	ctx               ServiceManagerContext
 }
@@ -126,4 +128,11 @@ func (sm *serviceManager) MCPService() AppMCPService {
 		sm.mcpService = NewMcpService(sm.svcCtx)
 	}
 	return sm.mcpService
+}
+
+func (sm *serviceManager) ElevenLabsService() ElevenLabsService {
+	if sm.elevenLabsService == nil {
+		sm.elevenLabsService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
+	}
+	return sm.elevenLabsService
 }

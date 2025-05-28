@@ -95,32 +95,6 @@ function downSampleInt16Buffer(buffer, inputSampleRate, outputSampleRate) {
     return result;
 }
 
-function decodeAndScheduleWav(base64Audio) {
-    if (!base64Audio) {
-        console.warn("Empty audio input");
-        return;
-    }
-
-    // const arrayBuffer = base64ToArrayBuffer();
-    const arrayBuffer = base64ToArrayBuffer(base64Audio);
-
-    audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-
-        const now = audioContext.currentTime;
-        if (lastPlaybackTime < now) {
-            lastPlaybackTime = now;
-        }
-
-        source.start(lastPlaybackTime);
-        lastPlaybackTime += audioBuffer.duration;
-    }, (error) => {
-        console.error("Failed to decode audio:", error);
-    });
-}
-
 function base64ToArrayBuffer(base64) {
     // If the string has a data URI prefix, strip it
     base64 = base64.includes(",") ? base64.split(",")[1] : base64;

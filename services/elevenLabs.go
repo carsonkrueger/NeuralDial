@@ -2,11 +2,13 @@ package services
 
 import (
 	"errors"
+	"io"
 
 	"github.com/haguro/elevenlabs-go"
 )
 
 type ElevenLabsService interface {
+	TextToSpeechStream(msg string, w io.Writer) error
 }
 
 type elevenLabsService struct {
@@ -98,4 +100,32 @@ func (el *elevenLabsService) TextToSpeech(msg string) ([]byte, error) {
 		return bytes, err
 	}
 	return bytes, nil
+}
+
+func (el *elevenLabsService) TextToSpeechStream(msg string, w io.Writer) error {
+	voice, err := el.GetVoice("Bill")
+	if err != nil {
+		return err
+	}
+
+	model, err := el.GetModel("Eleven Flash v2.5")
+	if err != nil {
+		return err
+	}
+
+	settings, err := el.GetDefaultVoiceSettings()
+	if err != nil {
+		return err
+	}
+
+	req := elevenlabs.TextToSpeechRequest{
+		Text:          msg,
+		ModelID:       model.ModelId,
+		VoiceSettings: settings,
+	}
+	err = el.client.TextToSpeechStream(w, voice.VoiceId, req, elevenlabs.OutputFormat("pcm_16000"))
+	if err != nil {
+		return err
+	}
+	return nil
 }

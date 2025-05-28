@@ -2,7 +2,6 @@ package text
 
 import (
 	"context"
-	"errors"
 
 	"github.com/carsonkrueger/main/services"
 	"github.com/tmc/langchaingo/agents"
@@ -32,11 +31,17 @@ func (m *gpt4oV1) HandleRequest(ctx context.Context, msgType int, req []byte) (*
 	return BaseLangChainHandleRequest(ctx, msgType, req, m.ServiceContext, &m.BaseLangChainMemory)
 }
 
-func (m *gpt4oV1) HandleRequestWithStreaming(ctx context.Context, msgType int, req []byte, out chan<- services.StreamResponse) error {
-	return errors.New("not implemented")
+func (m *gpt4oV1) HandleRequestWithStreaming(ctx context.Context, req []byte, out chan<- services.StreamResponse) {
+	out <- services.StreamResponse{Done: true}
 }
 
 func (w *gpt4oV1) HandleClose() {}
+
+func (w *gpt4oV1) IsHandling() bool {
+	return true
+}
+
+func (w *gpt4oV1) PreprocessRequest(ctx context.Context, req []byte) {}
 
 // func (l *llmService) StreamFromLLM(
 // 	ctx context.Context,

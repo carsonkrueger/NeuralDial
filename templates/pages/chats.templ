@@ -33,7 +33,8 @@ templ Speak() {
 		}, 50);
 
 		function sendData(data) {
-		    addBuffer(data)
+		    speakws.send(data); // use to send to the server consistently
+		    // addBuffer(data) // use this to send data only when user has not spoken for waitDurationMS
 		}
 
 		function addBuffer(data) {
@@ -73,7 +74,34 @@ templ Speak() {
 		    source.start(lastPlaybackTime);
 		    lastPlaybackTime += audioBuffer.duration;
 		}
+
+		function decodeAndScheduleWav(base64Audio) {
+		    if (!base64Audio) {
+                console.warn("Empty audio input");
+                return;
+		    }
+
+		    // const arrayBuffer = base64ToArrayBuffer();
+		    const arrayBuffer = base64ToArrayBuffer(base64Audio);
+
+		    audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+
+            const now = audioContext.currentTime;
+            if (lastPlaybackTime < now) {
+                lastPlaybackTime = now;
+            }
+
+            source.start(lastPlaybackTime);
+            lastPlaybackTime += audioBuffer.duration;
+		    }, (error) => {
+                console.error("Failed to decode audio:", error);
+		    });
+}
 	</script>
+	<div class="bg-black h-screen"/>
 }
 
 templ TextChat() {
