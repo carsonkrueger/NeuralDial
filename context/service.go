@@ -2,7 +2,7 @@ package context
 
 import (
 	// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-	"github.com/haguro/elevenlabs-go"
+	"github.com/carsonkrueger/elevenlabs-go"
 	"github.com/openai/openai-go"
 	"github.com/tmc/langchaingo/llms"
 )

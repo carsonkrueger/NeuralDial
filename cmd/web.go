@@ -3,15 +3,16 @@ package cmd
 import (
 	gctx "context"
 	"database/sql"
+	"net/http"
 	"time"
 
+	"github.com/carsonkrueger/elevenlabs-go"
 	"github.com/carsonkrueger/main/cfg"
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/database/DAO"
 	"github.com/carsonkrueger/main/logger"
 	"github.com/carsonkrueger/main/router"
 	"github.com/carsonkrueger/main/services"
-	"github.com/haguro/elevenlabs-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 
@@ -44,7 +45,8 @@ func web() {
 		panic(err)
 	}
 
-	elevenLabsClient := elevenlabs.NewClient(ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
+	httpClient := http.Client{}
+	elevenLabsClient := elevenlabs.NewClient(&httpClient, ctx, cfg.ElevenLabsAPIKey, 10*time.Second)
 	svcManagerCtx := context.NewServiceManagerContext(open4oMini, openClient, elevenLabsClient, cfg.WhisperModelPath)
 
 	dm := DAO.NewDAOManager(db)

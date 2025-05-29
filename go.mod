@@ -13,7 +13,6 @@ require (
 	//github.com/ggerganov/whisper.cpp/bindings/go v0.0.0-00010101000000-000000000000
 	github.com/go-jet/jet/v2 v2.12.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/haguro/elevenlabs-go v0.2.4
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
 	github.com/mark3labs/mcp-go v0.29.0
@@ -26,6 +25,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
+	github.com/carsonkrueger/elevenlabs-go v0.0.0-20250529053402-9e3b5b7021b8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

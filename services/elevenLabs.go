@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/haguro/elevenlabs-go"
+	"github.com/carsonkrueger/elevenlabs-go"
 )
 
 type ElevenLabsService interface {
@@ -128,4 +128,18 @@ func (el *elevenLabsService) TextToSpeechStream(msg string, w io.Writer) error {
 		return err
 	}
 	return nil
+}
+
+func (el *elevenLabsService) SpeechToText(msg string, r io.Reader) ([]byte, error) {
+	model, err := el.GetModel("Eleven Flash v2.5")
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := el.client.SpeechToText(model.ModelId, r)
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }

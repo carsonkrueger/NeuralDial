@@ -8,7 +8,7 @@ import (
 	"github.com/openai/openai-go"
 
 	// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-	"github.com/haguro/elevenlabs-go"
+	"github.com/carsonkrueger/elevenlabs-go"
 	"github.com/tmc/langchaingo/llms"
 	"go.uber.org/zap"
 )
