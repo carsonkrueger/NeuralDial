@@ -101,6 +101,7 @@ func (m *gpt4oV1) HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int
 func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
 	lgr := m.Lgr("HandleRequestWithStreaming")
 	ctx, cancel := gctx.WithCancel(ctx)
+	defer cancel()
 
 	defer func() {
 		out <- models.StreamResponse{Done: true}
