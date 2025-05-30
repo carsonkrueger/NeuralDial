@@ -1,22 +1,18 @@
 package services
 
 import (
+	"github.com/carsonkrueger/main/context"
 	"github.com/openai/openai-go"
 	"github.com/tmc/langchaingo/llms"
 )
 
-type LLMService interface {
-	LLM() llms.Model
-	OpenaiClient() *openai.Client
-}
-
 type llmService struct {
-	ServiceContext
+	context.ServiceContext
 	llm          llms.Model
 	openaiClient *openai.Client
 }
 
-func NewLLMService(ctx ServiceContext, llm llms.Model, openaiClient *openai.Client) *llmService {
+func NewLLMService(ctx context.ServiceContext, llm llms.Model, openaiClient *openai.Client) *llmService {
 	return &llmService{
 		ctx,
 		llm,

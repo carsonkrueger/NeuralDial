@@ -1,54 +1,35 @@
 package services
 
 import (
-	"context"
+	gctx "context"
 	"errors"
 	"fmt"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
-type WebSocketService interface {
-	StartSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions)
-	StartStreamingResponseSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions)
-}
-
 type webSocketService struct {
-	ServiceContext
+	context.ServiceContext
 }
 
-func NewWebSocketService(ctx ServiceContext) *webSocketService {
+func NewWebSocketService(ctx context.ServiceContext) *webSocketService {
 	return &webSocketService{
 		ctx,
 	}
 }
 
-type StreamResponse struct {
-	MsgType *int
-	Done    bool
-	Err     error
-	// id of data if any
-	ID   *string
-	Data []byte
-}
-
-type WebSocketHandler interface {
-	HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error)
-	HandleRequestWithStreaming(ctx context.Context, req []byte, out chan<- StreamResponse)
-	PreprocessRequest(ctx context.Context, req []byte)
-	IsHandling() bool
-	HandleClose()
-}
-
-func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions) {
+func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler context.WebSocketHandler, opts *models.WebSocketOptions) {
 	opts.HandleDefaults()
 
 	lgr := ws.Lgr("StartSocket")
+	ctx, cancel := gctx.WithCancel(gctx.Background())
+	ctx = context.WithCancel(ctx, cancel)
 	mutex := sync.Mutex{}
 	done := make(chan bool)
 	defer close(done)
@@ -83,7 +64,6 @@ outer:
 		case <-done:
 			break
 		default:
-			ctx := context.Background()
 			msgType, reqBytes, err := conn.ReadMessage()
 			if err != nil {
 				lgr.Warn("No messages, closing connection...", zap.Error(err))
@@ -128,12 +108,16 @@ outer:
 	handler.HandleClose()
 }
 
-func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler WebSocketHandler, opts *models.WebSocketOptions) {
+func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.WebSocketHandler, opts *models.WebSocketOptions) {
 	opts.HandleDefaults()
 	lgr := ws.Lgr("StartSocket")
 
+	// ctx, cancel := gctx.WithCancel(gctx.Background())
+	// ctx = context.WithCancel(ctx, cancel)
+	ctx := gctx.Background()
+
 	incoming := make(chan []byte)
-	outgoing := make(chan StreamResponse)
+	outgoing := make(chan models.StreamResponse)
 	done := make(chan error)
 	defer close(incoming)
 	defer close(outgoing)
@@ -192,17 +176,10 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	for {
 		select {
 		case msg := <-incoming:
-			ctx := context.Background()
-
-			handler.PreprocessRequest(ctx, msg)
-			if handler.IsHandling() {
-				continue
-			}
-
+			ch := make(chan models.StreamResponse)
+			defer close(ch)
+			go handler.HandleRequestWithStreaming(ctx, msg, ch)
 			go func() {
-				ch := make(chan StreamResponse)
-				go handler.HandleRequestWithStreaming(ctx, msg, ch)
-				defer close(ch)
 				for v := range ch {
 					if v.Err != nil {
 						if opts.CloseOnHandleError {

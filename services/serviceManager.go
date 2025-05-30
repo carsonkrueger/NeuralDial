@@ -1,114 +1,54 @@
 package services
 
 import (
-	"context"
-	"database/sql"
-
-	"github.com/carsonkrueger/main/database/DAO"
-	"github.com/openai/openai-go"
-
-	// "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-	"github.com/carsonkrueger/elevenlabs-go"
-	"github.com/tmc/langchaingo/llms"
-	"go.uber.org/zap"
+	"github.com/carsonkrueger/main/context"
 )
 
-type ServiceManagerContext interface {
-	PrimaryModel() llms.Model
-	ElevenLabsClient() *elevenlabs.Client
-	OpenaiClient() *openai.Client
-
-	// WhisperCPPModel() whisper.Model
-}
-
-type ServiceContext interface {
-	Lgr(name string) *zap.Logger
-	SM() ServiceManager
-	DM() DAO.DAOManager
-	DB() *sql.DB
-}
-
-type appContext struct {
-	Lgr *zap.Logger
-	SM  ServiceManager
-	DM  DAO.DAOManager
-	DB  *sql.DB
-}
-
-func NewAppContext(
-	lgr *zap.Logger,
-	sm ServiceManager,
-	dm DAO.DAOManager,
-	db *sql.DB,
-) *appContext {
-	return &appContext{
-		lgr,
-		sm,
-		dm,
-		db,
-	}
-}
-
-type ServiceManager interface {
-	UsersService() UsersService
-	PrivilegesService() PrivilegesService
-	LLMService() LLMService
-	PhoneService() PhoneService
-	WebSocketService() WebSocketService
-	MCPService() AppMCPService
-	ElevenLabsService() ElevenLabsService
-}
-
 type serviceManager struct {
-	usersService      UsersService
-	privilegesService PrivilegesService
-	llmService        LLMService
-	phoneService      PhoneService
-	webSocketService  WebSocketService
-	mcpService        AppMCPService
-	elevenLabsService ElevenLabsService
-	svcCtx            ServiceContext
-	ctx               ServiceManagerContext
+	usersService      context.UsersService
+	privilegesService context.PrivilegesService
+	llmService        context.LLMService
+	phoneService      context.PhoneService
+	webSocketService  context.WebSocketService
+	mcpService        context.AppMCPService
+	elevenLabsService context.ElevenLabsService
+	svcCtx            context.ServiceContext
+	ctx               context.ServiceManagerContext
 }
 
-func NewServiceManager(svcCtx ServiceContext, svcManagerCtx ServiceManagerContext) *serviceManager {
+func NewServiceManager(svcCtx context.ServiceContext, svcManagerCtx context.ServiceManagerContext) *serviceManager {
 	return &serviceManager{
 		svcCtx: svcCtx,
 		ctx:    svcManagerCtx,
 	}
 }
 
-type PhoneService interface {
-	StartCall(ctx context.Context) error
-	EndCall(ctx context.Context) error
-}
-
-func (sm *serviceManager) SetAppContext(svcCtx ServiceContext) {
+func (sm *serviceManager) SetAppContext(svcCtx context.ServiceContext) {
 	sm.svcCtx = svcCtx
 }
 
-func (sm *serviceManager) UsersService() UsersService {
+func (sm *serviceManager) UsersService() context.UsersService {
 	if sm.usersService == nil {
 		sm.usersService = NewUsersService(sm.svcCtx)
 	}
 	return sm.usersService
 }
 
-func (sm *serviceManager) PrivilegesService() PrivilegesService {
+func (sm *serviceManager) PrivilegesService() context.PrivilegesService {
 	if sm.privilegesService == nil {
 		sm.privilegesService = NewPrivilegesService(sm.svcCtx)
 	}
 	return sm.privilegesService
 }
 
-func (sm *serviceManager) LLMService() LLMService {
+func (sm *serviceManager) LLMService() context.LLMService {
 	if sm.llmService == nil {
 		sm.llmService = NewLLMService(sm.svcCtx, sm.ctx.PrimaryModel(), sm.ctx.OpenaiClient())
 	}
 	return sm.llmService
 }
 
-func (sm *serviceManager) PhoneService() PhoneService {
+func (sm *serviceManager) PhoneService() context.PhoneService {
 	if sm.phoneService == nil {
 		// implement concrete phone service here
 		// sm.phoneService = NewTwilioService(sm.svcCtx)
@@ -116,21 +56,21 @@ func (sm *serviceManager) PhoneService() PhoneService {
 	return sm.phoneService
 }
 
-func (sm *serviceManager) WebSocketService() WebSocketService {
+func (sm *serviceManager) WebSocketService() context.WebSocketService {
 	if sm.webSocketService == nil {
 		sm.webSocketService = NewWebSocketService(sm.svcCtx)
 	}
 	return sm.webSocketService
 }
 
-func (sm *serviceManager) MCPService() AppMCPService {
+func (sm *serviceManager) MCPService() context.AppMCPService {
 	if sm.mcpService == nil {
 		sm.mcpService = NewMcpService(sm.svcCtx)
 	}
 	return sm.mcpService
 }
 
-func (sm *serviceManager) ElevenLabsService() ElevenLabsService {
+func (sm *serviceManager) ElevenLabsService() context.ElevenLabsService {
 	if sm.elevenLabsService == nil {
 		sm.elevenLabsService = NewElevenLabsService(sm.svcCtx, sm.ctx.ElevenLabsClient())
 	}

@@ -1,19 +1,20 @@
 package text
 
 import (
-	"context"
+	gctx "context"
 
-	"github.com/carsonkrueger/main/services"
+	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/models"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/memory"
 )
 
 type gpt4oV1 struct {
 	BaseLangChainMemory
-	services.ServiceContext
+	context.ServiceContext
 }
 
-func NewGPT4oV1(agent *agents.Agent, mem *memory.ConversationBuffer, serviceContext services.ServiceContext) *gpt4oV1 {
+func NewGPT4oV1(agent *agents.Agent, mem *memory.ConversationBuffer, serviceContext context.ServiceContext) *gpt4oV1 {
 	return &gpt4oV1{
 		BaseLangChainMemory: BaseLangChainMemory{
 			agent,
@@ -23,16 +24,16 @@ func NewGPT4oV1(agent *agents.Agent, mem *memory.ConversationBuffer, serviceCont
 	}
 }
 
-func (m *gpt4oV1) Generate(ctx context.Context, req []byte) ([]byte, error) {
+func (m *gpt4oV1) Generate(ctx gctx.Context, req []byte) ([]byte, error) {
 	return BaseLangChainGenerate(ctx, req, m.ServiceContext, &m.BaseLangChainMemory)
 }
 
-func (m *gpt4oV1) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
+func (m *gpt4oV1) HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error) {
 	return BaseLangChainHandleRequest(ctx, msgType, req, m.ServiceContext, &m.BaseLangChainMemory)
 }
 
-func (m *gpt4oV1) HandleRequestWithStreaming(ctx context.Context, req []byte, out chan<- services.StreamResponse) {
-	out <- services.StreamResponse{Done: true}
+func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
+	out <- models.StreamResponse{Done: true}
 }
 
 func (w *gpt4oV1) HandleClose() {}
@@ -41,7 +42,7 @@ func (w *gpt4oV1) IsHandling() bool {
 	return true
 }
 
-func (w *gpt4oV1) PreprocessRequest(ctx context.Context, req []byte) {}
+func (w *gpt4oV1) PreprocessRequest(ctx gctx.Context, req []byte) {}
 
 // func (l *llmService) StreamFromLLM(
 // 	ctx context.Context,

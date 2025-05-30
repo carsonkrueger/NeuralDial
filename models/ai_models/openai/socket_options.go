@@ -18,7 +18,7 @@ func NewTextOptions() models.WebSocketOptions {
 
 func NewVoiceOptions() models.WebSocketOptions {
 	return models.WebSocketOptions{
-		PongDeadline:        tools.Ptr(1 * time.Minute),
+		PongDeadline:        tools.Ptr(500 * time.Millisecond),
 		PongInterval:        tools.Ptr(8 * time.Second),
 		AllowedMessageTypes: []int{websocket.BinaryMessage},
 	}

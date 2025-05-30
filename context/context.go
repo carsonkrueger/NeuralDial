@@ -33,3 +33,13 @@ func WithPrivilegeLevelID(ctx gctx.Context, id int64) gctx.Context {
 func GetPrivilegeLevelID(ctx gctx.Context) int64 {
 	return ctx.Value(PRIVILEGE_LEVEL_ID_KEY).(int64)
 }
+
+var CANCEL_ID_KEY = "CANCEL"
+
+func WithCancel(ctx gctx.Context, cancel gctx.CancelFunc) gctx.Context {
+	return gctx.WithValue(ctx, CANCEL_ID_KEY, cancel)
+}
+
+func GetCancel(ctx gctx.Context) gctx.CancelFunc {
+	return ctx.Value(CANCEL_ID_KEY).(gctx.CancelFunc)
+}

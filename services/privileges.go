@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/a-h/templ"
+	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/gen/go_db/auth/model"
 	"github.com/carsonkrueger/main/models/authModels"
 	"github.com/carsonkrueger/main/templates/datadisplay"
@@ -14,22 +15,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type PrivilegesService interface {
-	CreatePrivilegeAssociation(levelID int64, privID int64) error
-	DeletePrivilegeAssociation(levelID int64, privID int64) error
-	CreateLevel(name string) error
-	HasPermissionByID(levelID int64, permissionID int64) bool
-	SetUserPrivilegeLevel(levelID int64, userID int64) error
-	UserPrivilegeLevelJoinAsRowData(upl []authModels.UserPrivilegeLevelJoin, allLevels []*model.PrivilegeLevels) []datadisplay.RowData
-	JoinedPrivilegeLevelAsRowData(jpl []authModels.JoinedPrivilegeLevel) []datadisplay.RowData
-	JoinedPrivilegesAsRowData(jpl []authModels.JoinedPrivilegesRaw) []datadisplay.RowData
-}
-
 type privilegesService struct {
-	ServiceContext
+	context.ServiceContext
 }
 
-func NewPrivilegesService(ctx ServiceContext) *privilegesService {
+func NewPrivilegesService(ctx context.ServiceContext) *privilegesService {
 	return &privilegesService{ctx}
 }
 

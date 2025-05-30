@@ -5,21 +5,18 @@ import (
 	"io"
 
 	"github.com/carsonkrueger/elevenlabs-go"
+	"github.com/carsonkrueger/main/context"
 )
 
-type ElevenLabsService interface {
-	TextToSpeechStream(msg string, w io.Writer) error
-}
-
 type elevenLabsService struct {
-	ServiceContext
+	context.ServiceContext
 	client               *elevenlabs.Client
 	voices               []elevenlabs.Voice
 	models               []elevenlabs.Model
 	defaultVoiceSettings *elevenlabs.VoiceSettings
 }
 
-func NewElevenLabsService(ctx ServiceContext, client *elevenlabs.Client) *elevenLabsService {
+func NewElevenLabsService(ctx context.ServiceContext, client *elevenlabs.Client) *elevenLabsService {
 	return &elevenLabsService{
 		ServiceContext:       ctx,
 		client:               client,

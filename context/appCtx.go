@@ -4,28 +4,27 @@ import (
 	"database/sql"
 
 	"github.com/carsonkrueger/main/database/DAO"
-	"github.com/carsonkrueger/main/services"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 )
 
 type AppContext interface {
 	Lgr(name string) *zap.Logger
-	SM() services.ServiceManager
+	SM() ServiceManager
 	DM() DAO.DAOManager
 	DB() *sql.DB
 }
 
 type appContext struct {
 	Logger         *zap.Logger
-	ServiceManager services.ServiceManager
+	ServiceManager ServiceManager
 	DAOManger      DAO.DAOManager
 	Database       *sql.DB
 }
 
 func NewAppContext(
 	Logger *zap.Logger,
-	ServiceManager services.ServiceManager,
+	ServiceManager ServiceManager,
 	DAOManger DAO.DAOManager,
 	Database *sql.DB,
 ) *appContext {
@@ -41,7 +40,7 @@ func (ctx *appContext) Lgr(name string) *zap.Logger {
 	return ctx.Logger.Named(name)
 }
 
-func (ctx *appContext) SM() services.ServiceManager {
+func (ctx *appContext) SM() ServiceManager {
 	return ctx.ServiceManager
 }
 

@@ -6,6 +6,15 @@ import (
 	"github.com/carsonkrueger/main/tools"
 )
 
+type StreamResponse struct {
+	MsgType *int
+	Done    bool
+	Err     error
+	// id of data if any
+	ID   *string
+	Data []byte
+}
+
 type WebSocketOptions struct {
 	PongDeadline       *time.Duration
 	PongInterval       *time.Duration

@@ -7,9 +7,10 @@ templ Speak() {
 	    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 	    const sampleRate = 16000;
 		let lastPlaybackTime = audioContext.currentTime;
-		let buffer = new Int16Array(0);
 		let lastBufferTime = null;
-		const waitDurationMS = 500;
+		let buffer = new Int16Array(0);
+		let playCount = 0;
+		let canceled = null;
 
 		speakws.onopen = () => {
             console.log("WebSocket connected");
@@ -17,28 +18,41 @@ templ Speak() {
 		};
 	    speakws.onmessage = (e) => {
             console.log("Playing received audio");
+            // prevent audio from playing when user has interrupted
+            if (canceled && Date.now() - canceled < 400) {
+                return
+            }
             // decodeAndScheduleWav(e.data);
             scheduleBuffer(e.data)
 	    };
 	    speakws.onerror = (err) => console.error("WS error", err);
 
-		setInterval(() => {
-		    // if user has not spoken for waitDurationMS, send the buffer and play the response
-			if (lastBufferTime && Date.now() - lastBufferTime > waitDurationMS) {
-			    lastBufferTime = null;
-				const wavData = pcmToWav(buffer, sampleRate, 1, 16)
-				speakws.send(wavData);
-				buffer = new Int16Array(0);
-			}
-		}, 50);
-
 		function sendData(data) {
-		    speakws.send(data); // use to send to the server consistently
-		    // addBuffer(data) // use this to send data only when user has not spoken for waitDurationMS
+		    console.log(playCount)
+			addBuffer(data);
+		    // speakws.send(data); // use to send to the server consistently
+			if (playCount > 0) {
+			    // wait 100 ms then close the audio context
+			    audioContext.close().then(() => {
+			        playCount = 0;
+			        audioContext = new AudioContext();
+					lastPlaybackTime = audioContext.currentTime;
+					canceled = Date.now();
+			    });
+		    }
 		}
 
+		setInterval(() => {
+		    // If user has not spoken for 100ms send buffer through websocket
+			if (lastBufferTime && Date.now() - lastBufferTime > 100) {
+			    lastBufferTime = null;
+				speakws.send(buffer);
+				buffer = new Int16Array(0);
+			}
+		}, 100)
+
 		function addBuffer(data) {
-			newBuffer = new Int16Array(buffer.length + data.length);
+		    newBuffer = new Int16Array(buffer.length + data.length);
 			newBuffer.set(buffer, 0);
 			newBuffer.set(data, buffer.length);
 			buffer = newBuffer;
@@ -50,6 +64,7 @@ templ Speak() {
 				console.warn("Empty buffer received");
 				return;
 		    }
+			playCount++;
             int16Array = new Int16Array(buf);
 		    const floatData = new Float32Array(int16Array.length);
 		    for (let i = 0; i < int16Array.length; i++) {
@@ -64,6 +79,9 @@ templ Speak() {
 		    const source = audioContext.createBufferSource();
 		    source.buffer = audioBuffer;
 		    source.connect(audioContext.destination);
+			source.onended = () => {
+			    playCount--;
+			};
 
 			const now = audioContext.currentTime;
 			if (lastPlaybackTime < now) {

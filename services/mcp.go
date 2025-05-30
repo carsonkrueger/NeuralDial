@@ -6,23 +6,19 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/carsonkrueger/main/context"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-type AppMCPService interface {
-	Server() *server.MCPServer
-	Client() *client.Client
-}
-
 type appMCP struct {
-	ServiceContext
+	context.ServiceContext
 	server *server.MCPServer
 	client *client.Client
 }
 
-func NewMcpService(ctx ServiceContext) *appMCP {
+func NewMcpService(ctx context.ServiceContext) *appMCP {
 	s := server.NewMCPServer("llm-agent", "1.0")
 	client, err := client.NewInProcessClient(s)
 	if err != nil {

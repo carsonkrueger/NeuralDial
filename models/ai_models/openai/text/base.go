@@ -1,9 +1,9 @@
 package text
 
 import (
-	"context"
+	gctx "context"
 
-	"github.com/carsonkrueger/main/services"
+	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
 	"github.com/tmc/langchaingo/agents"
@@ -18,17 +18,17 @@ type BaseLangChainMemory struct {
 	Mem   *memory.ConversationBuffer
 }
 
-func (b *BaseLangChainMemory) SaveUserResponse(ctx context.Context, res []byte) error {
+func (b *BaseLangChainMemory) SaveUserResponse(ctx gctx.Context, res []byte) error {
 	return b.Mem.ChatHistory.AddUserMessage(ctx, string(res))
 }
 
-func (b *BaseLangChainMemory) SaveAssistantResponse(ctx context.Context, res []byte) error {
+func (b *BaseLangChainMemory) SaveAssistantResponse(ctx gctx.Context, res []byte) error {
 	return b.Mem.ChatHistory.AddAIMessage(ctx, string(res))
 }
 
 // base generate methods
 
-func BaseLangChainGenerate(ctx context.Context, req []byte, svcCtx services.ServiceContext, m *BaseLangChainMemory) ([]byte, error) {
+func BaseLangChainGenerate(ctx gctx.Context, req []byte, svcCtx context.ServiceContext, m *BaseLangChainMemory) ([]byte, error) {
 	executor := agents.NewExecutor(*m.Agent, agents.WithMemory(m.Mem))
 	res, err := chains.Run(ctx, executor, string(req))
 	if err != nil {
@@ -37,7 +37,7 @@ func BaseLangChainGenerate(ctx context.Context, req []byte, svcCtx services.Serv
 	return []byte(res), nil
 }
 
-func BaseLangChainHandleRequest(ctx context.Context, msgType int, req []byte, svcCtx services.ServiceContext, m *BaseLangChainMemory) (*int, []byte, error) {
+func BaseLangChainHandleRequest(ctx gctx.Context, msgType int, req []byte, svcCtx context.ServiceContext, m *BaseLangChainMemory) (*int, []byte, error) {
 	res, err := BaseLangChainGenerate(ctx, req, svcCtx, m)
 	if err != nil {
 		return nil, nil, err

@@ -1,17 +1,17 @@
 package voice
 
 import (
-	"context"
+	gctx "context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/carsonkrueger/main/services"
+	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/models"
 	"github.com/carsonkrueger/main/tools"
 	"github.com/gorilla/websocket"
 	"github.com/openai/openai-go"
@@ -22,17 +22,19 @@ import (
 type gpt4oV1 struct {
 	bufMutex          sync.Mutex
 	chatMutex         sync.Mutex
-	handling          atomic.Bool
+	handleMutex       sync.Mutex
+	handling          bool
+	aiResponding      bool
 	waitDuration      time.Duration
 	waitCheckInterval time.Duration
 	lastUserSpeak     time.Time
 	audioBuffer       []byte
 	chatHistory       *[]openai.ChatCompletionMessageParamUnion
-	services.ServiceContext
+	context.ServiceContext
 	openaiClient *openai.Client
 }
 
-func NewGPT4oV1(svcCtx services.ServiceContext, waitDuration time.Duration, waitCheckInterval time.Duration, client *openai.Client) *gpt4oV1 {
+func NewGPT4oV1(svcCtx context.ServiceContext, waitDuration time.Duration, waitCheckInterval time.Duration, client *openai.Client) *gpt4oV1 {
 	return &gpt4oV1{
 		waitDuration:      waitDuration,
 		ServiceContext:    svcCtx,
@@ -42,7 +44,7 @@ func NewGPT4oV1(svcCtx services.ServiceContext, waitDuration time.Duration, wait
 	}
 }
 
-func (m *gpt4oV1) SaveUserStreamResponse(ctx context.Context, wav []byte) error {
+func (m *gpt4oV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
 	data := base64.StdEncoding.EncodeToString(wav)
 	m.chatMutex.Lock()
 	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
@@ -72,7 +74,7 @@ func (m *gpt4oV1) SaveAssistantTextResponse(text string) error {
 	return nil
 }
 
-func (m *gpt4oV1) Generate(ctx context.Context, req []byte) (*string, []byte, error) {
+func (m *gpt4oV1) Generate(ctx gctx.Context, req []byte) (*string, []byte, error) {
 	completion, err := m.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: *m.chatHistory,
 		// Audio: openai.ChatCompletionAudioParam{
@@ -88,34 +90,50 @@ func (m *gpt4oV1) Generate(ctx context.Context, req []byte) (*string, []byte, er
 	return nil, []byte(completion.Choices[0].Message.Content), nil
 }
 
-func (m *gpt4oV1) GenerateStream(ctx context.Context, req []byte) (*string, []byte, error) {
+func (m *gpt4oV1) GenerateStream(ctx gctx.Context, req []byte) (*string, []byte, error) {
 	return nil, nil, nil
 }
 
-func (m *gpt4oV1) HandleRequest(ctx context.Context, msgType int, req []byte) (*int, []byte, error) {
+func (m *gpt4oV1) HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error) {
 	return nil, nil, nil
 }
 
-func (m *gpt4oV1) PreprocessRequest(ctx context.Context, req []byte) {
+func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
+	lgr := m.Lgr("HandleRequestWithStreaming")
+	ctx, cancel := gctx.WithCancel(ctx)
+
+	defer func() {
+		out <- models.StreamResponse{Done: true}
+	}()
+
 	m.bufMutex.Lock()
 	m.audioBuffer = append(m.audioBuffer, req...)
 	m.lastUserSpeak = time.Now()
 	m.bufMutex.Unlock()
-}
 
-func (m *gpt4oV1) HandleRequestWithStreaming(ctx context.Context, req []byte, out chan<- services.StreamResponse) {
-	lgr := m.Lgr("HandleRequestWithStreaming")
-	m.handling.Store(true)
-	defer m.handling.Store(false)
+	if m.aiResponding && m.handling {
+		lgr.Debug("Canceling")
+		cancel()
+	}
 
-	fmt.Println("HANDLING")
-	defer func() {
-		out <- services.StreamResponse{Done: true}
-	}()
+	m.handleMutex.Lock()
+	if m.handling {
+		m.handleMutex.Unlock()
+		return
+	}
+	m.handling = true
+	m.handleMutex.Unlock()
+	lgr.Info("HANDLING")
 
-	// check every m.waitCheckInterval to see when the user stops speaking
 	ticker := time.NewTicker(m.waitCheckInterval)
 	defer ticker.Stop()
+
+	defer func() {
+		m.handleMutex.Lock()
+		m.handling = false
+		m.aiResponding = false
+		m.handleMutex.Unlock()
+	}()
 
 outer:
 	for {
@@ -126,6 +144,7 @@ outer:
 				break outer
 			}
 		case <-ctx.Done():
+			lgr.Info("DONE")
 			return
 		}
 	}
@@ -140,7 +159,6 @@ outer:
 		return
 	}
 
-	// may need this to stream response from gpt to eleven labs
 	stream := m.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages:   *m.chatHistory,
 		Modalities: []string{"text"},
@@ -160,15 +178,23 @@ outer:
 			select {
 			default:
 				if err := stream.Err(); err != nil {
-					fmt.Println("error streaming from gpt:", err)
+					lgr.Error("GPT Err", zap.Error(err))
 					return
+				}
+				if !m.aiResponding {
+					m.aiResponding = true
 				}
 				chunk := stream.Current()
 				data := []byte(chunk.Choices[0].Delta.Content)
+				if len(data) == 0 {
+					lgr.Warn("Empty response from GPT")
+					continue
+				}
 				_, err := pw1.Write(data)
 				if err != nil {
-					lgr.Error("gpt streaming", zap.Error(err))
-					pw1.CloseWithError(err)
+					if err != io.ErrClosedPipe {
+						lgr.Error("gpt streaming", zap.Error(err))
+					}
 					return
 				}
 				fullResponse.Write(data)
@@ -207,8 +233,9 @@ outer:
 					fmt.Println("found bound:", res)
 					_, err = pw2.Write([]byte(res))
 					if err != nil {
-						lgr.Error("gpt-to-elevenlabs bounds write", zap.Error(err))
-						pw2.CloseWithError(err)
+						if err != io.ErrClosedPipe {
+							lgr.Error("gpt-to-elevenlabs bounds write", zap.Error(err))
+						}
 						return
 					}
 					currentResponse.Reset()
@@ -240,8 +267,9 @@ outer:
 				}
 				err := m.SM().ElevenLabsService().TextToSpeechStream(string(buf3[:n]), pw3)
 				if err != nil {
-					lgr.Error("elevenlabs stream", zap.Error(err))
-					pw3.CloseWithError(err)
+					if err != io.ErrClosedPipe {
+						lgr.Error("elevenlabs stream", zap.Error(err))
+					}
 					return
 				}
 			case <-ctx.Done():
@@ -261,14 +289,15 @@ outer2:
 				if errRead == io.EOF {
 					break outer2
 				}
-				lgr.Error("elevenlabs read", zap.Error(errRead))
+				if errRead != io.ErrClosedPipe {
+					lgr.Error("elevenlabs read", zap.Error(errRead))
+				}
 				return
 			}
-			currentResponse := services.StreamResponse{
+			out <- models.StreamResponse{
 				Data:    slices.Clone(buf4[:n]), // copy to avoid reuse
 				MsgType: tools.Ptr(websocket.BinaryMessage),
 			}
-			out <- currentResponse
 		case <-ctx.Done():
 			return
 		}
@@ -276,7 +305,3 @@ outer2:
 }
 
 func (w *gpt4oV1) HandleClose() {}
-
-func (w *gpt4oV1) IsHandling() bool {
-	return w.handling.Load()
-}
