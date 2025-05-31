@@ -16,6 +16,7 @@ type StreamResponse struct {
 }
 
 type WebSocketOptions struct {
+	KeepAliveDuration  time.Duration
 	PongDeadline       *time.Duration
 	PongInterval       *time.Duration
 	CloseOnHandleError bool
@@ -26,6 +27,12 @@ type WebSocketOptions struct {
 func (opts *WebSocketOptions) HandleDefaults() {
 	if opts == nil {
 		opts = &WebSocketOptions{}
+	}
+	if opts.PongDeadline == nil {
+		opts.PongDeadline = tools.Ptr(3 * time.Second)
+	}
+	if opts.KeepAliveDuration == 0 {
+		opts.KeepAliveDuration = 10 * time.Minute
 	}
 	if opts.PongInterval == nil {
 		opts.PongInterval = tools.Ptr(10 * time.Second)

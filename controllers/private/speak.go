@@ -2,7 +2,6 @@ package private
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
@@ -65,7 +64,7 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	handler := voice.NewGPT4oV1(r.AppContext, time.Millisecond*500, time.Millisecond*100, r.SM().LLMService().OpenaiClient())
+	handler := voice.NewGPT4oV1(r.AppContext)
 	opts := openai.NewVoiceOptions()
 	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler, &opts)
 

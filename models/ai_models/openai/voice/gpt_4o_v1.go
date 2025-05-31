@@ -35,14 +35,14 @@ type gpt4oV1 struct {
 	context.ServiceContext
 }
 
-func NewGPT4oV1(svcCtx context.ServiceContext, waitDuration time.Duration, waitCheckInterval time.Duration, client *openai.Client) *gpt4oV1 {
+func NewGPT4oV1(svcCtx context.ServiceContext) *gpt4oV1 {
 	return &gpt4oV1{
 		interrupt:         models.NewInterrupt(),
-		waitDuration:      waitDuration,
+		waitDuration:      time.Millisecond * 500,
+		waitCheckInterval: time.Millisecond * 50,
 		ServiceContext:    svcCtx,
 		chatHistory:       &[]openai.ChatCompletionMessageParamUnion{},
-		openaiClient:      client,
-		waitCheckInterval: waitCheckInterval,
+		openaiClient:      svcCtx.SM().LLMService().OpenaiClient(),
 	}
 }
 

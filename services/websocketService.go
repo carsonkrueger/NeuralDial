@@ -115,28 +115,28 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	incoming := make(chan []byte)
 	var writeMutex sync.Mutex
 
-	// conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
-	// conn.SetPongHandler(func(string) error {
-	// 	return conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
-	// })
+	conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
+	})
 
 	// PING PONG Handler
-	// go func() {
-	// 	ticker := time.NewTicker(*opts.PongInterval)
-	// 	defer ticker.Stop()
-	// 	for {
-	// 		select {
-	// 		case <-ticker.C:
-	// 			_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
-	// 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-	// 				cancel()
-	// 				return
-	// 			}
-	// 		case <-ctx.Done():
-	// 			return
-	// 		}
-	// 	}
-	// }()
+	go func() {
+		ticker := time.NewTicker(*opts.PongInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// Reader goroutine
 	go func() {
