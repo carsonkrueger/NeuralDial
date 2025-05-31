@@ -5,8 +5,7 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
-	"github.com/carsonkrueger/main/models/ai_models/openai"
-	"github.com/carsonkrueger/main/models/ai_models/openai/voice"
+	"github.com/carsonkrueger/main/services"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
@@ -64,9 +63,8 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	handler := voice.NewGPT4oV1(r.AppContext)
-	opts := openai.NewVoiceOptions()
-	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler, &opts)
+	handler := services.NewGPT4oVoiceV1(r.AppContext)
+	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler)
 
 	lgr.Info("Leaving...")
 }

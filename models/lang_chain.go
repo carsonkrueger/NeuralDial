@@ -1,4 +1,4 @@
-package ai_agents
+package models
 
 import (
 	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
@@ -7,6 +7,11 @@ import (
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/memory"
 )
+
+type BaseLangChainMemory struct {
+	Agent *agents.Agent
+	Mem   *memory.ConversationBuffer
+}
 
 func NewLangChainConversationalAgent(initialMessages []llms.ChatMessage, client *client.Client, llm llms.Model) (agents.Agent, *memory.ConversationBuffer, error) {
 	adapter, err := langchaingo_mcp_adapter.New(client)

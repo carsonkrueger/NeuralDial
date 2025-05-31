@@ -1,4 +1,4 @@
-package voice
+package services
 
 import (
 	gctx "context"
@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type gpt4oV1 struct {
+type gpt4oVoiceV1 struct {
 	interrupt         *models.Interrupt                         // used to interrupted ai response pipeline
 	handling          bool                                      // whether ai has begun to handle the request
 	handleMutex       sync.Mutex                                // mutex for handling
@@ -35,8 +35,8 @@ type gpt4oV1 struct {
 	context.ServiceContext
 }
 
-func NewGPT4oV1(svcCtx context.ServiceContext) *gpt4oV1 {
-	return &gpt4oV1{
+func NewGPT4oVoiceV1(svcCtx context.ServiceContext) *gpt4oVoiceV1 {
+	return &gpt4oVoiceV1{
 		interrupt:         models.NewInterrupt(),
 		waitDuration:      time.Millisecond * 500,
 		waitCheckInterval: time.Millisecond * 50,
@@ -46,7 +46,15 @@ func NewGPT4oV1(svcCtx context.ServiceContext) *gpt4oV1 {
 	}
 }
 
-func (m *gpt4oV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
+func (m *gpt4oVoiceV1) Options() models.WebSocketOptions {
+	return models.WebSocketOptions{
+		PongDeadline:        tools.Ptr(1 * time.Second),
+		PongInterval:        tools.Ptr(8 * time.Second),
+		AllowedMessageTypes: []int{websocket.BinaryMessage},
+	}
+}
+
+func (m *gpt4oVoiceV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
 	data := base64.StdEncoding.EncodeToString(wav)
 	m.chatMutex.Lock()
 	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
@@ -65,7 +73,7 @@ func (m *gpt4oV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
 	return nil
 }
 
-func (m *gpt4oV1) SaveAssistantTextResponse(text string) error {
+func (m *gpt4oVoiceV1) SaveAssistantTextResponse(text string) error {
 	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 			Content: openai.ChatCompletionAssistantMessageParamContentUnion{
@@ -76,31 +84,7 @@ func (m *gpt4oV1) SaveAssistantTextResponse(text string) error {
 	return nil
 }
 
-func (m *gpt4oV1) Generate(ctx gctx.Context, req []byte) (*string, []byte, error) {
-	completion, err := m.openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Messages: *m.chatHistory,
-		// Audio: openai.ChatCompletionAudioParam{
-		// 	Format: "wav",
-		// 	Voice:  "alloy",
-		// },
-		Modalities: []string{"text"},
-		Model:      shared.ChatModelGPT4oMiniAudioPreview,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return nil, []byte(completion.Choices[0].Message.Content), nil
-}
-
-func (m *gpt4oV1) GenerateStream(ctx gctx.Context, req []byte) (*string, []byte, error) {
-	return nil, nil, nil
-}
-
-func (m *gpt4oV1) HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error) {
-	return nil, nil, nil
-}
-
-func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
+func (m *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
 	lgr := m.Lgr("HandleRequestWithStreaming")
 	var err error
 
@@ -322,8 +306,6 @@ outer:
 			return
 		}
 	}
-
-	fmt.Println("RETURNING")
 }
 
-func (w *gpt4oV1) HandleClose() {}
+func (w *gpt4oVoiceV1) HandleClose() {}

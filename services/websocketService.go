@@ -23,7 +23,8 @@ func NewWebSocketService(ctx context.ServiceContext) *webSocketService {
 	}
 }
 
-func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler context.WebSocketHandler, opts *models.WebSocketOptions) {
+func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler context.SocketHandler) {
+	opts := handler.Options()
 	opts.HandleDefaults()
 
 	lgr := ws.Lgr("StartSocket")
@@ -107,7 +108,8 @@ outer:
 	handler.HandleClose()
 }
 
-func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.WebSocketHandler, opts *models.WebSocketOptions) {
+func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.StreamingSocketHandler) {
+	opts := handler.Options()
 	opts.HandleDefaults()
 
 	ctx, cancel := gctx.WithCancel(gctx.Background())
@@ -115,28 +117,28 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	incoming := make(chan []byte)
 	var writeMutex sync.Mutex
 
-	conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
-	})
+	// conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
+	// conn.SetPongHandler(func(string) error {
+	// 	return conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
+	// })
 
-	// PING PONG Handler
-	go func() {
-		ticker := time.NewTicker(*opts.PongInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					cancel()
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	// // PING PONG Handler
+	// go func() {
+	// 	ticker := time.NewTicker(*opts.PongInterval)
+	// 	defer ticker.Stop()
+	// 	for {
+	// 		select {
+	// 		case <-ticker.C:
+	// 			_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
+	// 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+	// 				cancel()
+	// 				return
+	// 			}
+	// 		case <-ctx.Done():
+	// 			return
+	// 		}
+	// 	}
+	// }()
 
 	// Reader goroutine
 	go func() {
