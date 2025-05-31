@@ -2,7 +2,6 @@ package services
 
 import (
 	gctx "context"
-	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -110,101 +109,95 @@ outer:
 
 func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.WebSocketHandler, opts *models.WebSocketOptions) {
 	opts.HandleDefaults()
-	lgr := ws.Lgr("StartSocket")
 
-	// ctx, cancel := gctx.WithCancel(gctx.Background())
-	// ctx = context.WithCancel(ctx, cancel)
-	ctx := gctx.Background()
-
+	ctx, cancel := gctx.WithCancel(gctx.Background())
+	ctx = context.WithCancel(ctx, cancel)
 	incoming := make(chan []byte)
-	outgoing := make(chan models.StreamResponse)
-	done := make(chan error)
-	defer close(incoming)
-	defer close(outgoing)
-	defer close(done)
+	var writeMutex sync.Mutex
 
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
-	})
+	// conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
+	// conn.SetPongHandler(func(string) error {
+	// 	return conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
+	// })
+
+	// PING PONG Handler
+	// go func() {
+	// 	ticker := time.NewTicker(*opts.PongInterval)
+	// 	defer ticker.Stop()
+	// 	for {
+	// 		select {
+	// 		case <-ticker.C:
+	// 			_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
+	// 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+	// 				cancel()
+	// 				return
+	// 			}
+	// 		case <-ctx.Done():
+	// 			return
+	// 		}
+	// 	}
+	// }()
 
 	// Reader goroutine
 	go func() {
-		defer close(done)
-		for {
-			msgType, msg, err := conn.ReadMessage()
-			if err != nil {
-				done <- errors.New("error reading message")
-				break
-			}
-			if len(opts.AllowedMessageTypes) > 0 && !slices.Contains(opts.AllowedMessageTypes, msgType) {
-				done <- errors.New("invalid websocket message type")
-				break
-			}
-			incoming <- msg
-		}
-	}()
-
-	// Writer goroutine
-	go func() {
 		for {
 			select {
-			case v := <-outgoing:
-				if v.Err != nil {
-					done <- v.Err
-				}
-				if v.MsgType == nil || v.Data == nil {
-					if v.Done {
-						break
-					}
-					continue
-				}
-				err := conn.WriteMessage(*v.MsgType, v.Data)
+			default:
+				msgType, msg, err := conn.ReadMessage() // 1 reader - no mutex
 				if err != nil {
-					done <- errors.New("error writing message")
+					cancel()
 					return
 				}
-			case err := <-done:
-				if err != nil {
-					lgr.Error("Error with websocket", zap.Error(err))
+				if len(opts.AllowedMessageTypes) > 0 && !slices.Contains(opts.AllowedMessageTypes, msgType) {
+					cancel()
+					return
 				}
+				incoming <- msg
+			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
 	// Main loop: Process client messages and optionally send server responses
+outer:
 	for {
 		select {
 		case msg := <-incoming:
 			ch := make(chan models.StreamResponse)
-			defer close(ch)
-			go handler.HandleRequestWithStreaming(ctx, msg, ch)
 			go func() {
 				for v := range ch {
 					if v.Err != nil {
 						if opts.CloseOnHandleError {
-							done <- errors.New("error handling stream request")
-							break
+							cancel()
+							return
 						}
 						continue
 					}
 					if v.MsgType == nil || v.Data == nil {
 						if v.Done {
-							break
+							return
 						}
 						continue
 					}
-					outgoing <- v
+					writeMutex.Lock()
+					err := conn.WriteMessage(*v.MsgType, v.Data)
+					writeMutex.Unlock()
+					if err != nil {
+						cancel()
+						return
+					}
 					if v.Done {
-						break
+						return
 					}
 				}
 			}()
-		case err := <-done:
-			if err != nil {
-				lgr.Error("error with websocket", zap.Error(err))
-			}
-			break
+			go func() {
+				defer close(ch)
+				handler.HandleRequestWithStreaming(ctx, msg, ch)
+			}()
+		case <-ctx.Done():
+			break outer
 		}
 	}
 }

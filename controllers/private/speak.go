@@ -65,7 +65,7 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	handler := voice.NewGPT4oV1(r.AppContext, time.Second*1, time.Millisecond*100, r.SM().LLMService().OpenaiClient())
+	handler := voice.NewGPT4oV1(r.AppContext, time.Millisecond*500, time.Millisecond*100, r.SM().LLMService().OpenaiClient())
 	opts := openai.NewVoiceOptions()
 	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler, &opts)
 

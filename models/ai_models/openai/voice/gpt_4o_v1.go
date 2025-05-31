@@ -20,22 +20,24 @@ import (
 )
 
 type gpt4oV1 struct {
-	bufMutex          sync.Mutex
-	chatMutex         sync.Mutex
-	handleMutex       sync.Mutex
-	handling          bool
-	aiResponding      bool
-	waitDuration      time.Duration
-	waitCheckInterval time.Duration
-	lastUserSpeak     time.Time
-	audioBuffer       []byte
-	chatHistory       *[]openai.ChatCompletionMessageParamUnion
+	interrupt         *models.Interrupt                         // used to interrupted ai response pipeline
+	handling          bool                                      // whether ai has begun to handle the request
+	handleMutex       sync.Mutex                                // mutex for handling
+	aiResponding      bool                                      // mutex whether ai is responding to user
+	waitDuration      time.Duration                             // how long to wait for user to stop speaking
+	waitCheckInterval time.Duration                             // how often to check if user has stopped speaking
+	lastUserSpeak     time.Time                                 // time of last user audio req
+	audioBuffer       []byte                                    // raw audio buffer
+	bufMutex          sync.Mutex                                // mutex for audio buffer
+	chatHistory       *[]openai.ChatCompletionMessageParamUnion // entire chat history of conversation
+	chatMutex         sync.Mutex                                // mutex for chat history
+	openaiClient      *openai.Client
 	context.ServiceContext
-	openaiClient *openai.Client
 }
 
 func NewGPT4oV1(svcCtx context.ServiceContext, waitDuration time.Duration, waitCheckInterval time.Duration, client *openai.Client) *gpt4oV1 {
 	return &gpt4oV1{
+		interrupt:         models.NewInterrupt(),
 		waitDuration:      waitDuration,
 		ServiceContext:    svcCtx,
 		chatHistory:       &[]openai.ChatCompletionMessageParamUnion{},
@@ -100,21 +102,27 @@ func (m *gpt4oV1) HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int
 
 func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
 	lgr := m.Lgr("HandleRequestWithStreaming")
-	ctx, cancel := gctx.WithCancel(ctx)
-	defer cancel()
+	var err error
 
 	defer func() {
-		out <- models.StreamResponse{Done: true}
+		out <- models.StreamResponse{Done: true, Err: err}
 	}()
 
+	// save audio buffer
 	m.bufMutex.Lock()
 	m.audioBuffer = append(m.audioBuffer, req...)
 	m.lastUserSpeak = time.Now()
 	m.bufMutex.Unlock()
 
-	if m.aiResponding && m.handling {
+	// PRE AI RESPONSE
+	// if AI is responding, interrupt - maybe wait n time for
+	if m.aiResponding {
 		lgr.Debug("Canceling")
-		cancel()
+		m.interrupt.Signal()
+		m.handleMutex.Lock()
+		m.handling = false
+		m.aiResponding = false
+		m.handleMutex.Unlock()
 	}
 
 	m.handleMutex.Lock()
@@ -124,28 +132,30 @@ func (m *gpt4oV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out c
 	}
 	m.handling = true
 	m.handleMutex.Unlock()
+
+	// POST AI RESPONSE
 	lgr.Info("HANDLING")
-
 	ticker := time.NewTicker(m.waitCheckInterval)
-	defer ticker.Stop()
-
 	defer func() {
+		ticker.Stop()
+		m.interrupt.Reset()
 		m.handleMutex.Lock()
 		m.handling = false
-		m.aiResponding = false
 		m.handleMutex.Unlock()
 	}()
 
-outer:
+userSpeak:
 	for {
 		select {
 		case <-ticker.C:
 			if time.Since(m.lastUserSpeak) > m.waitDuration {
 				lgr.Info("wait duration reached")
-				break outer
+				break userSpeak
 			}
 		case <-ctx.Done():
-			lgr.Info("DONE")
+			return
+		case <-m.interrupt.Done():
+			lgr.Warn("Interrupted")
 			return
 		}
 	}
@@ -172,9 +182,11 @@ outer:
 	defer pr1.Close()
 
 	go func() {
-		defer pw1.Close()
-		defer fmt.Println("gpt streaming done")
-		defer m.SaveAssistantTextResponse(fullResponse.String())
+		defer func() {
+			fmt.Println("gpt streaming done:")
+			pw1.Close()
+			m.SaveAssistantTextResponse(fullResponse.String())
+		}()
 		for stream.Next() {
 			select {
 			default:
@@ -182,9 +194,7 @@ outer:
 					lgr.Error("GPT Err", zap.Error(err))
 					return
 				}
-				if !m.aiResponding {
-					m.aiResponding = true
-				}
+				m.aiResponding = true
 				chunk := stream.Current()
 				data := []byte(chunk.Choices[0].Delta.Content)
 				if len(data) == 0 {
@@ -198,8 +208,13 @@ outer:
 					}
 					return
 				}
+				fmt.Println(string(data))
 				fullResponse.Write(data)
 			case <-ctx.Done():
+				lgr.Warn("Context done")
+				return
+			case <-m.interrupt.Done():
+				lgr.Warn("Interrupted")
 				return
 			}
 		}
@@ -211,37 +226,34 @@ outer:
 
 	buf2 := make([]byte, 1024)
 	go func() {
-		defer pw2.Close()
 		defer fmt.Println("gpt-to-elevenlabs done")
-	outer:
+		defer pw2.Close()
 		for {
 			select {
 			default:
 				n, errRead := pr1.Read(buf2)
 				if errRead != nil {
-					if errRead == io.EOF {
-						break outer
-					}
 					return
 				}
-				_, err := currentResponse.Write(buf2[:n])
-				if err != nil {
-					lgr.Error("gpt-to-elevenlabs write", zap.Error(err))
-					return
-				}
+				currentResponse.Write(buf2[:n])
 				res := currentResponse.String()
-				if tools.IsBoundary(res, true) {
-					fmt.Println("found bound:", res)
-					_, err = pw2.Write([]byte(res))
-					if err != nil {
-						if err != io.ErrClosedPipe {
-							lgr.Error("gpt-to-elevenlabs bounds write", zap.Error(err))
-						}
-						return
-					}
-					currentResponse.Reset()
+				if !tools.IsBoundary(res, true) {
+					continue
 				}
+				fmt.Println("found bound:", res)
+				_, err = pw2.Write([]byte(res))
+				if err != nil {
+					if err != io.ErrClosedPipe {
+						lgr.Error("gpt-to-elevenlabs bounds write", zap.Error(err))
+					}
+					return
+				}
+				currentResponse.Reset()
 			case <-ctx.Done():
+				lgr.Warn("Context done")
+				return
+			case <-m.interrupt.Done():
+				lgr.Warn("Interrupted")
 				return
 			}
 		}
@@ -250,19 +262,18 @@ outer:
 	// Start ElevenLabs streaming into the pipe writer in a goroutine
 	pr3, pw3 := io.Pipe()
 	defer pr3.Close()
-	buf3 := make([]byte, 1024)
+	buf3 := make([]byte, 2048)
 
 	go func() {
-		defer pw3.Close() // Close when done to signal EOF
 		defer fmt.Println("ElevenLabs streaming done")
-	outer:
+		defer pw3.Close()
 		for {
 			select {
 			default:
 				n, errRead := pr2.Read(buf3)
 				if errRead != nil {
 					if errRead == io.EOF {
-						break outer
+						return
 					}
 					return
 				}
@@ -274,6 +285,10 @@ outer:
 					return
 				}
 			case <-ctx.Done():
+				lgr.Warn("Context done")
+				return
+			case <-m.interrupt.Done():
+				lgr.Warn("Interrupted")
 				return
 			}
 		}
@@ -281,14 +296,14 @@ outer:
 
 	// reading eleven labs response
 	buf4 := make([]byte, 4096)
-outer2:
+outer:
 	for {
 		select {
 		default:
 			n, errRead := pr3.Read(buf4)
 			if errRead != nil {
 				if errRead == io.EOF {
-					break outer2
+					break outer
 				}
 				if errRead != io.ErrClosedPipe {
 					lgr.Error("elevenlabs read", zap.Error(errRead))
@@ -300,9 +315,15 @@ outer2:
 				MsgType: tools.Ptr(websocket.BinaryMessage),
 			}
 		case <-ctx.Done():
+			lgr.Warn("Context done")
+			return
+		case <-m.interrupt.Done():
+			lgr.Warn("Interrupted")
 			return
 		}
 	}
+
+	fmt.Println("RETURNING")
 }
 
 func (w *gpt4oV1) HandleClose() {}
