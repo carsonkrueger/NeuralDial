@@ -125,6 +125,7 @@ func (m *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, 
 		m.interrupt.Reset()
 		m.handleMutex.Lock()
 		m.handling = false
+		m.aiResponding = false
 		m.handleMutex.Unlock()
 	}()
 
@@ -167,7 +168,7 @@ userSpeak:
 
 	go func() {
 		defer func() {
-			fmt.Println("gpt streaming done:")
+			fmt.Println("gpt streaming done")
 			pw1.Close()
 			m.SaveAssistantTextResponse(fullResponse.String())
 		}()
@@ -192,7 +193,6 @@ userSpeak:
 					}
 					return
 				}
-				fmt.Println(string(data))
 				fullResponse.Write(data)
 			case <-ctx.Done():
 				lgr.Warn("Context done")
