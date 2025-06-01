@@ -20,29 +20,30 @@ import (
 )
 
 type gpt4oVoiceV1 struct {
-	interrupt         *models.Interrupt                         // used to interrupted ai response pipeline
-	handling          bool                                      // whether ai has begun to handle the request
-	handleMutex       sync.Mutex                                // mutex for handling
-	aiResponding      bool                                      // mutex whether ai is responding to user
-	waitDuration      time.Duration                             // how long to wait for user to stop speaking
-	waitCheckInterval time.Duration                             // how often to check if user has stopped speaking
-	lastUserSpeak     time.Time                                 // time of last user audio req
-	audioBuffer       []byte                                    // raw audio buffer
-	bufMutex          sync.Mutex                                // mutex for audio buffer
-	chatHistory       *[]openai.ChatCompletionMessageParamUnion // entire chat history of conversation
-	chatMutex         sync.Mutex                                // mutex for chat history
-	openaiClient      *openai.Client
+	interrupt             *models.Interrupt                         // used to interrupted ai response pipeline
+	interruptWaitDuration time.Duration                             // how long the user has to speak to interrupt the ai response pipeline
+	handlingSince         *time.Time                                // when the ai has began handling the request and has started to think
+	handleMutex           sync.Mutex                                // mutex for handling
+	waitDuration          time.Duration                             // how long to wait for user to stop speaking
+	waitCheckInterval     time.Duration                             // how often to check if user has stopped speaking
+	lastUserSpeak         time.Time                                 // time of last user audio req
+	audioBuffer           []byte                                    // raw audio buffer
+	bufMutex              sync.Mutex                                // mutex for audio buffer
+	chatHistory           *[]openai.ChatCompletionMessageParamUnion // entire chat history of conversation
+	chatMutex             sync.Mutex                                // mutex for chat history
+	openaiClient          *openai.Client
 	context.ServiceContext
 }
 
 func NewGPT4oVoiceV1(svcCtx context.ServiceContext) *gpt4oVoiceV1 {
 	return &gpt4oVoiceV1{
-		interrupt:         models.NewInterrupt(),
-		waitDuration:      time.Millisecond * 500,
-		waitCheckInterval: time.Millisecond * 50,
-		ServiceContext:    svcCtx,
-		chatHistory:       &[]openai.ChatCompletionMessageParamUnion{},
-		openaiClient:      svcCtx.SM().LLMService().OpenaiClient(),
+		interrupt:             models.NewInterrupt(),
+		interruptWaitDuration: time.Second * 1,
+		waitDuration:          time.Millisecond * 500,
+		waitCheckInterval:     time.Millisecond * 50,
+		ServiceContext:        svcCtx,
+		chatHistory:           &[]openai.ChatCompletionMessageParamUnion{},
+		openaiClient:          svcCtx.SM().LLMService().OpenaiClient(),
 	}
 }
 
@@ -100,34 +101,24 @@ func (m *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, 
 
 	// PRE AI RESPONSE
 	// if AI is responding, interrupt - maybe wait n time for
-	if m.aiResponding {
-		lgr.Debug("Canceling")
-		m.interrupt.Signal()
-		m.handleMutex.Lock()
-		m.handling = false
-		m.aiResponding = false
-		m.handleMutex.Unlock()
-	}
-
 	m.handleMutex.Lock()
-	if m.handling {
-		m.handleMutex.Unlock()
-		return
+	if m.handlingSince != nil {
+		if time.Since(*m.handlingSince) > m.interruptWaitDuration {
+			lgr.Debug("Canceling")
+			m.interrupt.Signal()
+			m.interrupt.Reset()
+		} else {
+			m.handleMutex.Unlock()
+			return
+		}
 	}
-	m.handling = true
+	// AI HANDLING
+	m.handlingSince = tools.Ptr(time.Now())
 	m.handleMutex.Unlock()
-
-	// POST AI RESPONSE
 	lgr.Info("HANDLING")
+
 	ticker := time.NewTicker(m.waitCheckInterval)
-	defer func() {
-		ticker.Stop()
-		m.interrupt.Reset()
-		m.handleMutex.Lock()
-		m.handling = false
-		m.aiResponding = false
-		m.handleMutex.Unlock()
-	}()
+	defer ticker.Stop()
 
 userSpeak:
 	for {
@@ -145,15 +136,17 @@ userSpeak:
 		}
 	}
 
+	// convert to wav and save the response in the history
 	m.bufMutex.Lock()
-	wav := tools.Int16ToWAV(tools.BytesToInt16Slice(m.audioBuffer), 16000)
-	m.audioBuffer = []byte{}
-	m.bufMutex.Unlock()
-
-	if err := m.SaveUserStreamResponse(ctx, wav); err != nil {
-		lgr.Error("SaveUserStreamResponse", zap.Error(err))
-		return
+	if len(m.audioBuffer) > 0 {
+		wav := tools.Int16ToWAV(tools.BytesToInt16Slice(m.audioBuffer), 16000)
+		m.audioBuffer = []byte{}
+		if err := m.SaveUserStreamResponse(ctx, wav); err != nil {
+			lgr.Error("SaveUserStreamResponse", zap.Error(err))
+			return
+		}
 	}
+	m.bufMutex.Unlock()
 
 	stream := m.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages:   *m.chatHistory,
@@ -179,7 +172,6 @@ userSpeak:
 					lgr.Error("GPT Err", zap.Error(err))
 					return
 				}
-				m.aiResponding = true
 				chunk := stream.Current()
 				data := []byte(chunk.Choices[0].Delta.Content)
 				if len(data) == 0 {
@@ -287,11 +279,12 @@ outer:
 			n, errRead := pr3.Read(buf4)
 			if errRead != nil {
 				if errRead == io.EOF {
+					m.handleMutex.Lock()
+					m.handlingSince = nil
+					m.handleMutex.Unlock()
 					break outer
 				}
-				if errRead != io.ErrClosedPipe {
-					lgr.Error("elevenlabs read", zap.Error(errRead))
-				}
+				lgr.Error("elevenlabs read", zap.Error(errRead))
 				return
 			}
 			out <- models.StreamResponse{
