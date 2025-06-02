@@ -1,5 +1,7 @@
 package tools
 
+import "time"
+
 func Int16ToWAV(data []int16, sampleRate int) []byte {
 	const numChannels = 1
 	const bitsPerSample = 16
@@ -45,4 +47,11 @@ func putLE32(buf []byte, val uint32) {
 	buf[1] = byte(val >> 8)
 	buf[2] = byte(val >> 16)
 	buf[3] = byte(val >> 24)
+}
+
+// Duration of PCM audio in milliseconds
+func MsPcmDuration(pcmLength int, sampleRate int, channels int, bitsPerSample int) time.Duration {
+	bytesPerSecond := float64(sampleRate * channels * (bitsPerSample / 8))
+	seconds := float64(pcmLength) / bytesPerSecond
+	return time.Duration(seconds*1000) * time.Millisecond
 }

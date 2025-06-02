@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/carsonkrueger/main/context"
@@ -22,6 +25,7 @@ import (
 type gpt4oVoiceV1 struct {
 	interrupt             *models.Interrupt                         // used to interrupted ai response pipeline
 	interruptWaitDuration time.Duration                             // how long the user has to speak to interrupt the ai response pipeline
+	handlingInterrupt     atomic.Bool                               // whether the ai is currently handling an interrupt
 	handlingSince         *time.Time                                // when the ai has began handling the request and has started to think
 	handleMutex           sync.Mutex                                // mutex for handling
 	waitDuration          time.Duration                             // how long to wait for user to stop speaking
@@ -31,6 +35,7 @@ type gpt4oVoiceV1 struct {
 	bufMutex              sync.Mutex                                // mutex for audio buffer
 	chatHistory           *[]openai.ChatCompletionMessageParamUnion // entire chat history of conversation
 	chatMutex             sync.Mutex                                // mutex for chat history
+	speakCadence          time.Duration                             // how often the AI speaks per word
 	openaiClient          *openai.Client
 	context.ServiceContext
 }
@@ -47,7 +52,7 @@ func NewGPT4oVoiceV1(svcCtx context.ServiceContext) *gpt4oVoiceV1 {
 	}
 }
 
-func (m *gpt4oVoiceV1) Options() models.WebSocketOptions {
+func (g *gpt4oVoiceV1) Options() models.WebSocketOptions {
 	return models.WebSocketOptions{
 		PongDeadline:        tools.Ptr(1 * time.Second),
 		PongInterval:        tools.Ptr(8 * time.Second),
@@ -55,10 +60,10 @@ func (m *gpt4oVoiceV1) Options() models.WebSocketOptions {
 	}
 }
 
-func (m *gpt4oVoiceV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
+func (g *gpt4oVoiceV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) error {
 	data := base64.StdEncoding.EncodeToString(wav)
-	m.chatMutex.Lock()
-	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
+	g.chatMutex.Lock()
+	*g.chatHistory = append(*g.chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfUser: &openai.ChatCompletionUserMessageParam{
 			Content: openai.ChatCompletionUserMessageParamContentUnion{
 				OfArrayOfContentParts: []openai.ChatCompletionContentPartUnionParam{
@@ -70,23 +75,27 @@ func (m *gpt4oVoiceV1) SaveUserStreamResponse(ctx gctx.Context, wav []byte) erro
 			},
 		},
 	})
-	m.chatMutex.Unlock()
+	g.chatMutex.Unlock()
 	return nil
 }
 
-func (m *gpt4oVoiceV1) SaveAssistantTextResponse(text string) error {
-	*m.chatHistory = append(*m.chatHistory, openai.ChatCompletionMessageParamUnion{
+var whitespaceRegex = regexp.MustCompile(`\s`)
+
+func (g *gpt4oVoiceV1) SaveAssistantTextResponse(text string) error {
+	g.chatMutex.Lock()
+	*g.chatHistory = append(*g.chatHistory, openai.ChatCompletionMessageParamUnion{
 		OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 			Content: openai.ChatCompletionAssistantMessageParamContentUnion{
 				OfString: openai.String(text),
 			},
 		},
 	})
+	g.chatMutex.Unlock()
 	return nil
 }
 
-func (m *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
-	lgr := m.Lgr("HandleRequestWithStreaming")
+func (g *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse) {
+	lgr := g.Lgr("HandleRequestWithStreaming")
 	var err error
 
 	defer func() {
@@ -94,76 +103,78 @@ func (m *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, 
 	}()
 
 	// save audio buffer
-	m.bufMutex.Lock()
-	m.audioBuffer = append(m.audioBuffer, req...)
-	m.lastUserSpeak = time.Now()
-	m.bufMutex.Unlock()
+	g.bufMutex.Lock()
+	g.audioBuffer = append(g.audioBuffer, req...)
+	g.lastUserSpeak = time.Now()
+	g.bufMutex.Unlock()
 
 	// PRE AI RESPONSE
 	// if AI is responding, interrupt - maybe wait n time for
-	m.handleMutex.Lock()
-	if m.handlingSince != nil {
-		if time.Since(*m.handlingSince) > m.interruptWaitDuration {
-			lgr.Debug("Canceling")
-			m.interrupt.Signal()
-			m.interrupt.Reset()
+	g.handleMutex.Lock()
+	if g.handlingSince != nil {
+		if time.Since(*g.handlingSince) > g.interruptWaitDuration && !g.handlingInterrupt.Load() {
+			g.handlingInterrupt.Store(true)
+			g.interrupt.Signal()
+			lgr.Debug("Interrupting")
 		} else {
-			m.handleMutex.Unlock()
+			g.handleMutex.Unlock()
 			return
 		}
 	}
 	// AI HANDLING
-	m.handlingSince = tools.Ptr(time.Now())
-	m.handleMutex.Unlock()
+	g.handlingSince = tools.Ptr(time.Now())
+	g.handleMutex.Unlock()
 	lgr.Info("HANDLING")
 
-	ticker := time.NewTicker(m.waitCheckInterval)
+	ticker := time.NewTicker(g.waitCheckInterval)
 	defer ticker.Stop()
 
 userSpeak:
 	for {
 		select {
 		case <-ticker.C:
-			if time.Since(m.lastUserSpeak) > m.waitDuration {
+			if time.Since(g.lastUserSpeak) > g.waitDuration {
 				lgr.Info("wait duration reached")
 				break userSpeak
 			}
 		case <-ctx.Done():
 			return
-		case <-m.interrupt.Done():
-			lgr.Warn("Interrupted")
-			return
+		case <-g.interrupt.Done():
+			if !g.handlingInterrupt.Load() {
+				return
+			}
 		}
 	}
+	g.handlingInterrupt.Store(false)
 
 	// convert to wav and save the response in the history
-	m.bufMutex.Lock()
-	if len(m.audioBuffer) > 0 {
-		wav := tools.Int16ToWAV(tools.BytesToInt16Slice(m.audioBuffer), 16000)
-		m.audioBuffer = []byte{}
-		if err := m.SaveUserStreamResponse(ctx, wav); err != nil {
+	g.bufMutex.Lock()
+	if len(g.audioBuffer) > 0 {
+		wav := tools.Int16ToWAV(tools.BytesToInt16Slice(g.audioBuffer), 16000)
+		g.audioBuffer = []byte{}
+		if err := g.SaveUserStreamResponse(ctx, wav); err != nil {
 			lgr.Error("SaveUserStreamResponse", zap.Error(err))
 			return
 		}
 	}
-	m.bufMutex.Unlock()
+	g.bufMutex.Unlock()
 
-	stream := m.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
-		Messages:   *m.chatHistory,
+	stream := g.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+		Messages:   *g.chatHistory,
 		Modalities: []string{"text"},
 		Model:      shared.ChatModelGPT4oMiniAudioPreview,
 	})
-	defer stream.Close()
-
-	var fullResponse strings.Builder
 	pr1, pw1 := io.Pipe()
-	defer pr1.Close()
+
+	defer func() {
+		stream.Close()
+		pr1.Close()
+	}()
 
 	go func() {
 		defer func() {
 			fmt.Println("gpt streaming done")
 			pw1.Close()
-			m.SaveAssistantTextResponse(fullResponse.String())
 		}()
 		for stream.Next() {
 			select {
@@ -185,18 +196,17 @@ userSpeak:
 					}
 					return
 				}
-				fullResponse.Write(data)
 			case <-ctx.Done():
-				lgr.Warn("Context done")
 				return
-			case <-m.interrupt.Done():
+			case <-g.interrupt.Done():
 				lgr.Warn("Interrupted")
 				return
 			}
 		}
 	}()
 
-	var currentResponse strings.Builder
+	var fullResponse strings.Builder
+	var curResponse strings.Builder
 	pr2, pw2 := io.Pipe()
 	defer pr2.Close()
 
@@ -211,35 +221,35 @@ userSpeak:
 				if errRead != nil {
 					return
 				}
-				currentResponse.Write(buf2[:n])
-				res := currentResponse.String()
+				res := string(buf2[:n])
+				fullResponse.Write(buf2[:n])
+				curResponse.Write(buf2[:n])
 				if !tools.IsBoundary(res, true) {
 					continue
 				}
-				fmt.Println("found bound:", res)
-				_, err = pw2.Write([]byte(res))
+				fmt.Println("found bound:", curResponse.String())
+				_, err = pw2.Write([]byte(curResponse.String()))
 				if err != nil {
 					if err != io.ErrClosedPipe {
 						lgr.Error("gpt-to-elevenlabs bounds write", zap.Error(err))
 					}
 					return
 				}
-				currentResponse.Reset()
+				curResponse.Reset()
 			case <-ctx.Done():
-				lgr.Warn("Context done")
 				return
-			case <-m.interrupt.Done():
+			case <-g.interrupt.Done():
 				lgr.Warn("Interrupted")
 				return
 			}
 		}
 	}()
 
-	// Start ElevenLabs streaming into the pipe writer in a goroutine
 	pr3, pw3 := io.Pipe()
 	defer pr3.Close()
 	buf3 := make([]byte, 2048)
 
+	// Start ElevenLabs streaming into the pipe writer in a goroutine
 	go func() {
 		defer fmt.Println("ElevenLabs streaming done")
 		defer pw3.Close()
@@ -248,12 +258,9 @@ userSpeak:
 			default:
 				n, errRead := pr2.Read(buf3)
 				if errRead != nil {
-					if errRead == io.EOF {
-						return
-					}
 					return
 				}
-				err := m.SM().ElevenLabsService().TextToSpeechStream(string(buf3[:n]), pw3)
+				err := g.SM().ElevenLabsService().TextToSpeechStream(string(buf3[:n]), pw3)
 				if err != nil {
 					if err != io.ErrClosedPipe {
 						lgr.Error("elevenlabs stream", zap.Error(err))
@@ -261,44 +268,105 @@ userSpeak:
 					return
 				}
 			case <-ctx.Done():
-				lgr.Warn("Context done")
 				return
-			case <-m.interrupt.Done():
+			case <-g.interrupt.Done():
 				lgr.Warn("Interrupted")
 				return
 			}
 		}
 	}()
 
-	// reading eleven labs response
+	var speakResponseStarted *time.Time
+	speakDuration := time.Duration(0)
 	buf4 := make([]byte, 4096)
+	// reading eleven labs response and sending response back through the channel passed into the function
 outer:
 	for {
 		select {
 		default:
 			n, errRead := pr3.Read(buf4)
 			if errRead != nil {
+				g.handleMutex.Lock()
+				g.handlingSince = nil
+				g.handleMutex.Unlock()
 				if errRead == io.EOF {
-					m.handleMutex.Lock()
-					m.handlingSince = nil
-					m.handleMutex.Unlock()
 					break outer
 				}
 				lgr.Error("elevenlabs read", zap.Error(errRead))
-				return
+				break outer
 			}
+			if speakResponseStarted == nil {
+				speakResponseStarted = tools.Ptr(time.Now())
+			}
+			speakDuration += tools.MsPcmDuration(n, 16000, 1, 16)
 			out <- models.StreamResponse{
 				Data:    slices.Clone(buf4[:n]), // copy to avoid reuse
 				MsgType: tools.Ptr(websocket.BinaryMessage),
 			}
 		case <-ctx.Done():
-			lgr.Warn("Context done")
-			return
-		case <-m.interrupt.Done():
+			break outer
+		case <-g.interrupt.Done():
 			lgr.Warn("Interrupted")
-			return
+			break outer
 		}
 	}
+
+	if speakResponseStarted != nil {
+		startedCalc := time.Now()
+		sinceStartedResponse := time.Since(*speakResponseStarted)
+	outerSpeak:
+		for {
+			select {
+			case <-time.After(speakDuration - sinceStartedResponse):
+				// waited entire audio duration - save entire response
+				lgr.Debug(fullResponse.String())
+				g.SaveAssistantTextResponse(fullResponse.String())
+				break
+			case <-ctx.Done():
+				// interrupted, calculate duration spoken and save partial response
+				g.CalculateAndSaveAssistantResponse(sinceStartedResponse+time.Since(startedCalc), fullResponse.String())
+				lgr.Warn("Context done")
+				break outerSpeak
+			case <-g.interrupt.Done():
+				// interrupted, calculate duration spoken and save partial response
+				g.CalculateAndSaveAssistantResponse(sinceStartedResponse+time.Since(startedCalc), fullResponse.String())
+				lgr.Warn("Interrupted")
+				break outerSpeak
+			}
+		}
+	}
+
 }
 
-func (w *gpt4oVoiceV1) HandleClose() {}
+func (g *gpt4oVoiceV1) HandleClose() {}
+
+func (g *gpt4oVoiceV1) CalculateAndSaveAssistantResponse(speakDuration time.Duration, prompt string) {
+	if prompt == "" || speakDuration == 0 {
+		return
+	}
+	numWordsSpoken := int(math.Ceil(float64(speakDuration) / float64(g.speakCadence)))
+	nthWord := 0
+	idx := 0
+	wasWhitespace := false
+	for i := range prompt {
+		if i == len(prompt) {
+			idx = i
+			break
+		}
+		if !wasWhitespace && whitespaceRegex.Match([]byte{prompt[i]}) {
+			wasWhitespace = true
+			nthWord++
+			idx = i
+		} else {
+			wasWhitespace = false
+		}
+		if nthWord >= numWordsSpoken {
+			break
+		}
+	}
+	if idx <= 0 {
+		return
+	}
+	fmt.Printf("Words spoken: %d\n", numWordsSpoken)
+	g.SaveAssistantTextResponse(prompt[:idx])
+}
