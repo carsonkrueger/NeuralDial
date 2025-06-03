@@ -1,10 +1,13 @@
 package models
 
-import "sync"
+import (
+	"sync"
+)
 
 type Interrupt struct {
 	mu sync.Mutex
 	ch chan struct{}
+	wg sync.WaitGroup
 }
 
 func NewInterrupt() *Interrupt {
@@ -30,6 +33,18 @@ func (i *Interrupt) Reset() {
 	}
 	i.ch = make(chan struct{}) // new channel
 	i.mu.Unlock()
+}
+
+func (i *Interrupt) Wait() {
+	i.wg.Wait()
+}
+
+func (i *Interrupt) Add(n int) {
+	i.wg.Add(n)
+}
+
+func (i *Interrupt) Remove() {
+	i.wg.Done()
 }
 
 func (i *Interrupt) Done() <-chan struct{} {

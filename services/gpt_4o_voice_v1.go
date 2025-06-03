@@ -5,13 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"math"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
@@ -23,19 +22,18 @@ import (
 )
 
 type gpt4oVoiceV1 struct {
+	speakCadence          time.Duration                             // how often the AI speaks per word
 	interrupt             *models.Interrupt                         // used to interrupted ai response pipeline
+	interruptMutex        sync.Mutex                                // mutex for interrupt handling
 	interruptWaitDuration time.Duration                             // how long the user has to speak to interrupt the ai response pipeline
-	handlingInterrupt     atomic.Bool                               // whether the ai is currently handling an interrupt
-	handlingSince         *time.Time                                // when the ai has began handling the request and has started to think
-	handleMutex           sync.Mutex                                // mutex for handling
 	waitDuration          time.Duration                             // how long to wait for user to stop speaking
 	waitCheckInterval     time.Duration                             // how often to check if user has stopped speaking
 	lastUserSpeak         time.Time                                 // time of last user audio req
+	lastUserSpeakMutex    sync.Mutex                                // mutex for last user speak time
 	audioBuffer           []byte                                    // raw audio buffer
-	bufMutex              sync.Mutex                                // mutex for audio buffer
+	audioMutex            sync.Mutex                                // mutex for audio buffer
 	chatHistory           *[]openai.ChatCompletionMessageParamUnion // entire chat history of conversation
 	chatMutex             sync.Mutex                                // mutex for chat history
-	speakCadence          time.Duration                             // how often the AI speaks per word
 	openaiClient          *openai.Client
 	context.ServiceContext
 }
@@ -48,6 +46,7 @@ func NewGPT4oVoiceV1(svcCtx context.ServiceContext) *gpt4oVoiceV1 {
 		waitCheckInterval:     time.Millisecond * 50,
 		ServiceContext:        svcCtx,
 		chatHistory:           &[]openai.ChatCompletionMessageParamUnion{},
+		speakCadence:          time.Millisecond * 400,
 		openaiClient:          svcCtx.SM().LLMService().OpenaiClient(),
 	}
 }
@@ -103,28 +102,24 @@ func (g *gpt4oVoiceV1) HandleRequestWithStreaming(ctx gctx.Context, req []byte, 
 	}()
 
 	// save audio buffer
-	g.bufMutex.Lock()
+	g.audioMutex.Lock()
 	g.audioBuffer = append(g.audioBuffer, req...)
+	g.audioMutex.Unlock()
+	g.lastUserSpeakMutex.Lock()
 	g.lastUserSpeak = time.Now()
-	g.bufMutex.Unlock()
+	g.lastUserSpeakMutex.Unlock()
 
 	// PRE AI RESPONSE
 	// if AI is responding, interrupt - maybe wait n time for
-	g.handleMutex.Lock()
-	if g.handlingSince != nil {
-		if time.Since(*g.handlingSince) > g.interruptWaitDuration && !g.handlingInterrupt.Load() {
-			g.handlingInterrupt.Store(true)
-			g.interrupt.Signal()
-			lgr.Debug("Interrupting")
-		} else {
-			g.handleMutex.Unlock()
-			return
-		}
-	}
-	// AI HANDLING
-	g.handlingSince = tools.Ptr(time.Now())
-	g.handleMutex.Unlock()
-	lgr.Info("HANDLING")
+	g.interruptMutex.Lock()
+	lgr.Warn("SIGNALING INTERRUPT")
+	g.interrupt.Signal()
+	g.interrupt.Wait()
+	g.interrupt.Reset()
+	g.interrupt.Add(1) // add interrupt here so that it can be immediately interrupted if needed
+	defer g.interrupt.Remove()
+	lgr.Warn("INTERRUPT DONE")
+	g.interruptMutex.Unlock()
 
 	ticker := time.NewTicker(g.waitCheckInterval)
 	defer ticker.Stop()
@@ -133,22 +128,24 @@ userSpeak:
 	for {
 		select {
 		case <-ticker.C:
+			g.lastUserSpeakMutex.Lock()
 			if time.Since(g.lastUserSpeak) > g.waitDuration {
 				lgr.Info("wait duration reached")
+				g.lastUserSpeakMutex.Unlock()
 				break userSpeak
 			}
+			g.lastUserSpeakMutex.Unlock()
 		case <-ctx.Done():
 			return
 		case <-g.interrupt.Done():
-			if !g.handlingInterrupt.Load() {
-				return
-			}
+			return
 		}
 	}
-	g.handlingInterrupt.Store(false)
+
+	g.interrupt.Add(4)
 
 	// convert to wav and save the response in the history
-	g.bufMutex.Lock()
+	g.audioMutex.Lock()
 	if len(g.audioBuffer) > 0 {
 		wav := tools.Int16ToWAV(tools.BytesToInt16Slice(g.audioBuffer), 16000)
 		g.audioBuffer = []byte{}
@@ -157,7 +154,7 @@ userSpeak:
 			return
 		}
 	}
-	g.bufMutex.Unlock()
+	g.audioMutex.Unlock()
 
 	stream := g.openaiClient.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages:   *g.chatHistory,
@@ -175,6 +172,7 @@ userSpeak:
 		defer func() {
 			fmt.Println("gpt streaming done")
 			pw1.Close()
+			g.interrupt.Remove()
 		}()
 		for stream.Next() {
 			select {
@@ -199,7 +197,6 @@ userSpeak:
 			case <-ctx.Done():
 				return
 			case <-g.interrupt.Done():
-				lgr.Warn("Interrupted")
 				return
 			}
 		}
@@ -212,8 +209,11 @@ userSpeak:
 
 	buf2 := make([]byte, 1024)
 	go func() {
-		defer fmt.Println("gpt-to-elevenlabs done")
-		defer pw2.Close()
+		defer func() {
+			fmt.Println("gpt-to-elevenlabs done")
+			pw2.Close()
+			g.interrupt.Remove()
+		}()
 		for {
 			select {
 			default:
@@ -239,7 +239,6 @@ userSpeak:
 			case <-ctx.Done():
 				return
 			case <-g.interrupt.Done():
-				lgr.Warn("Interrupted")
 				return
 			}
 		}
@@ -251,8 +250,11 @@ userSpeak:
 
 	// Start ElevenLabs streaming into the pipe writer in a goroutine
 	go func() {
-		defer fmt.Println("ElevenLabs streaming done")
-		defer pw3.Close()
+		defer func() {
+			fmt.Println("ElevenLabs streaming done")
+			pw3.Close()
+			g.interrupt.Remove()
+		}()
 		for {
 			select {
 			default:
@@ -270,25 +272,23 @@ userSpeak:
 			case <-ctx.Done():
 				return
 			case <-g.interrupt.Done():
-				lgr.Warn("Interrupted")
 				return
 			}
 		}
 	}()
 
+	// reading eleven labs response and sending response back through the channel passed into the function
 	var speakResponseStarted *time.Time
 	speakDuration := time.Duration(0)
 	buf4 := make([]byte, 4096)
-	// reading eleven labs response and sending response back through the channel passed into the function
+	defer g.interrupt.Remove()
+
 outer:
 	for {
 		select {
 		default:
 			n, errRead := pr3.Read(buf4)
 			if errRead != nil {
-				g.handleMutex.Lock()
-				g.handlingSince = nil
-				g.handleMutex.Unlock()
 				if errRead == io.EOF {
 					break outer
 				}
@@ -306,12 +306,13 @@ outer:
 		case <-ctx.Done():
 			break outer
 		case <-g.interrupt.Done():
-			lgr.Warn("Interrupted")
 			break outer
 		}
 	}
 
 	if speakResponseStarted != nil {
+		g.interrupt.Add(1)
+		defer g.interrupt.Remove()
 		startedCalc := time.Now()
 		sinceStartedResponse := time.Since(*speakResponseStarted)
 	outerSpeak:
@@ -319,9 +320,9 @@ outer:
 			select {
 			case <-time.After(speakDuration - sinceStartedResponse):
 				// waited entire audio duration - save entire response
-				lgr.Debug(fullResponse.String())
+				fmt.Println("ENTIRE RESPONSE SAVED")
 				g.SaveAssistantTextResponse(fullResponse.String())
-				break
+				break outerSpeak
 			case <-ctx.Done():
 				// interrupted, calculate duration spoken and save partial response
 				g.CalculateAndSaveAssistantResponse(sinceStartedResponse+time.Since(startedCalc), fullResponse.String())
@@ -330,12 +331,10 @@ outer:
 			case <-g.interrupt.Done():
 				// interrupted, calculate duration spoken and save partial response
 				g.CalculateAndSaveAssistantResponse(sinceStartedResponse+time.Since(startedCalc), fullResponse.String())
-				lgr.Warn("Interrupted")
 				break outerSpeak
 			}
 		}
 	}
-
 }
 
 func (g *gpt4oVoiceV1) HandleClose() {}
@@ -344,16 +343,18 @@ func (g *gpt4oVoiceV1) CalculateAndSaveAssistantResponse(speakDuration time.Dura
 	if prompt == "" || speakDuration == 0 {
 		return
 	}
-	numWordsSpoken := int(math.Ceil(float64(speakDuration) / float64(g.speakCadence)))
-	nthWord := 0
+	numWordsSpoken := int64(speakDuration / g.speakCadence)
+	fmt.Printf("Words spoken: %d\n", numWordsSpoken)
+	var nthWord int64
 	idx := 0
 	wasWhitespace := false
-	for i := range prompt {
-		if i == len(prompt) {
+	for i, r := range prompt {
+		fmt.Print(r)
+		if i == len(prompt)-1 {
 			idx = i
 			break
 		}
-		if !wasWhitespace && whitespaceRegex.Match([]byte{prompt[i]}) {
+		if !wasWhitespace && unicode.IsSpace(r) {
 			wasWhitespace = true
 			nthWord++
 			idx = i
@@ -365,8 +366,9 @@ func (g *gpt4oVoiceV1) CalculateAndSaveAssistantResponse(speakDuration time.Dura
 		}
 	}
 	if idx <= 0 {
+		fmt.Print("No words spoken")
 		return
 	}
-	fmt.Printf("Words spoken: %d\n", numWordsSpoken)
+	fmt.Println(prompt[:idx])
 	g.SaveAssistantTextResponse(prompt[:idx])
 }
