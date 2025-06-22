@@ -5,10 +5,10 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
-	"github.com/carsonkrueger/main/services"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
 	"github.com/gorilla/websocket"
 )
 
@@ -63,8 +63,18 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	handler := services.NewGPT4oVoiceV1(r.AppContext)
-	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler)
+	tOptions := agent.NewSettingsConfigurationOptions()
+	tOptions.Agent.Think.Provider["type"] = "open_ai"
+	tOptions.Agent.Think.Provider["model"] = "gpt-4o-mini"
+	tOptions.Agent.Think.Prompt = "You are a helpful AI assistant."
+	tOptions.Agent.Listen.Provider["type"] = "deepgram"
+	tOptions.Agent.Listen.Provider["model"] = "nova-3"
+	tOptions.Agent.Listen.Provider["keyterms"] = []string{"Bueller"}
+	tOptions.Agent.Language = "en"
+	tOptions.Agent.Greeting = "Hello! How can I help you today?"
+
+	// handler := services.NewGPT4oVoiceV1(r.AppContext)
+	// r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler)
 
 	lgr.Info("Leaving...")
 }

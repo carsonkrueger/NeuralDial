@@ -206,8 +206,9 @@ userSpeak:
 	var curResponse strings.Builder
 	pr2, pw2 := io.Pipe()
 	defer pr2.Close()
-
 	buf2 := make([]byte, 1024)
+
+	// Find boundaries from GPT and write to buffer for eleven labs
 	go func() {
 		defer func() {
 			fmt.Println("gpt-to-elevenlabs done")
@@ -298,7 +299,7 @@ outer:
 			if speakResponseStarted == nil {
 				speakResponseStarted = tools.Ptr(time.Now())
 			}
-			speakDuration += tools.MsPcmDuration(n, 16000, 1, 16)
+			speakDuration += tools.PCMDuration(n, 16000, 1, 16)
 			out <- models.StreamResponse{
 				Data:    slices.Clone(buf4[:n]), // copy to avoid reuse
 				MsgType: tools.Ptr(websocket.BinaryMessage),
@@ -326,7 +327,6 @@ outer:
 			case <-ctx.Done():
 				// interrupted, calculate duration spoken and save partial response
 				g.CalculateAndSaveAssistantResponse(sinceStartedResponse+time.Since(startedCalc), fullResponse.String())
-				lgr.Warn("Context done")
 				break outerSpeak
 			case <-g.interrupt.Done():
 				// interrupted, calculate duration spoken and save partial response

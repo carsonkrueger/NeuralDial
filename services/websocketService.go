@@ -2,15 +2,11 @@ package services
 
 import (
 	gctx "context"
-	"fmt"
+	"io"
 	"slices"
-	"sync"
-	"time"
 
 	"github.com/carsonkrueger/main/context"
-	"github.com/carsonkrueger/main/models"
 	"github.com/gorilla/websocket"
-	"go.uber.org/zap"
 )
 
 type webSocketService struct {
@@ -23,99 +19,17 @@ func NewWebSocketService(ctx context.ServiceContext) *webSocketService {
 	}
 }
 
-func (ws *webSocketService) StartSocket(conn *websocket.Conn, handler context.SocketHandler) {
-	opts := handler.Options()
-	opts.HandleDefaults()
-
-	lgr := ws.Lgr("StartSocket")
-	ctx, cancel := gctx.WithCancel(gctx.Background())
-	ctx = context.WithCancel(ctx, cancel)
-	mutex := sync.Mutex{}
-	done := make(chan bool)
-	defer close(done)
-
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(*opts.PongDeadline))
-	})
-
-	go func() {
-	outer:
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				mutex.Lock()
-				err := conn.WriteMessage(websocket.PingMessage, nil)
-				mutex.Unlock()
-				if err != nil {
-					lgr.Warn("No pong")
-					done <- true
-					break outer
-				}
-				time.Sleep(*opts.PongInterval)
-			}
-		}
-	}()
-
-outer:
-	for {
-		select {
-		case <-done:
-			break
-		default:
-			msgType, reqBytes, err := conn.ReadMessage()
-			if err != nil {
-				lgr.Warn("No messages, closing connection...", zap.Error(err))
-				done <- true
-				break outer
-			}
-
-			if len(opts.AllowedMessageTypes) > 0 && !slices.Contains(opts.AllowedMessageTypes, msgType) {
-				lgr.Warn(fmt.Sprintf("Invalid websocket message type: %d", msgType))
-				closeMsg := websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "Unsupported message type")
-				mutex.Lock()
-				conn.WriteMessage(websocket.CloseMessage, closeMsg)
-				mutex.Unlock()
-				done <- true
-				break outer
-			}
-
-			resType, resBytes, err := handler.HandleRequest(ctx, msgType, reqBytes)
-			if err != nil {
-				lgr.Error("Could not handle request", zap.Error(err))
-				if opts.CloseOnHandleError {
-					done <- true
-					break outer
-				}
-				continue
-			}
-
-			if resType == nil || resBytes == nil {
-				continue
-			}
-
-			mutex.Lock()
-			err = conn.WriteMessage(*resType, resBytes)
-			mutex.Unlock()
-			if err != nil {
-				lgr.Error("Could not write message to connection", zap.Error(err))
-				continue
-			}
-		}
-	}
-
-	handler.HandleClose()
-}
-
 func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.StreamingSocketHandler) {
 	opts := handler.Options()
 	opts.HandleDefaults()
 
 	ctx, cancel := gctx.WithCancel(gctx.Background())
 	ctx = context.WithCancel(ctx, cancel)
-	incoming := make(chan []byte)
-	var writeMutex sync.Mutex
+	// incoming := make(chan []byte, 10)
+	// outgoing := make(chan models.StreamResponse, 10)
+	incomingR, incomingW := io.Pipe()
+	outgoingR, outgoingW := io.Pipe()
+	buf := make([]byte, 1024*100) // 100 KB
 
 	// conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
 	// conn.SetPongHandler(func(string) error {
@@ -142,10 +56,11 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 
 	// Reader goroutine
 	go func() {
+		defer incomingW.Close()
 		for {
 			select {
 			default:
-				msgType, msg, err := conn.ReadMessage() // 1 reader - no mutex
+				msgType, msg, err := conn.ReadMessage()
 				if err != nil {
 					cancel()
 					return
@@ -154,52 +69,35 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 					cancel()
 					return
 				}
-				incoming <- msg
+				_, err = incomingW.Write(msg)
+				if err != nil {
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
-	// Main loop: Process client messages and optionally send server responses
-outer:
-	for {
-		select {
-		case msg := <-incoming:
-			ch := make(chan models.StreamResponse)
-			go func() {
-				for v := range ch {
-					if v.Err != nil {
-						if opts.CloseOnHandleError {
-							cancel()
-							return
-						}
-						continue
-					}
-					if v.MsgType == nil || v.Data == nil {
-						if v.Done {
-							return
-						}
-						continue
-					}
-					writeMutex.Lock()
-					err := conn.WriteMessage(*v.MsgType, v.Data)
-					writeMutex.Unlock()
-					if err != nil {
-						cancel()
-						return
-					}
-					if v.Done {
-						return
-					}
+	// writer goroutine
+	go func() {
+		for {
+			select {
+			default:
+				_, err := outgoingR.Read(buf)
+				if err != nil {
+					cancel()
+					return
 				}
-			}()
-			go func() {
-				defer close(ch)
-				handler.HandleRequestWithStreaming(ctx, msg, ch)
-			}()
-		case <-ctx.Done():
-			break outer
+				err = conn.WriteMessage(websocket.BinaryMessage, buf)
+				if err != nil {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
+	}()
+
+	handler.HandleRequestWithStreaming(ctx, incomingR, outgoingW)
 }

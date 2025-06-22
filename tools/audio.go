@@ -50,7 +50,7 @@ func putLE32(buf []byte, val uint32) {
 }
 
 // Duration of PCM audio in milliseconds
-func MsPcmDuration(pcmLength int, sampleRate int, channels int, bitsPerSample int) time.Duration {
+func PCMDuration(pcmLength int, sampleRate int, channels int, bitsPerSample int) time.Duration {
 	bytesPerSecond := float64(sampleRate * channels * (bitsPerSample / 8))
 	seconds := float64(pcmLength) / bytesPerSecond
 	return time.Duration(seconds*1000) * time.Millisecond

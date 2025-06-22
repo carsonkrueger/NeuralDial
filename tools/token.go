@@ -10,10 +10,10 @@ var clauseEndPattern = regexp.MustCompile(`[;,:-]["')\]]?\s*$`)
 
 func IsBoundary(text string, desperate bool) bool {
 	trimmed := strings.TrimSpace(text)
-	if sentenceEndPattern.MatchString(trimmed) {
+	words := strings.Count(" ", trimmed) + 1
+	if sentenceEndPattern.MatchString(trimmed) && words > 3 {
 		return true
 	}
-	words := strings.Count(" ", trimmed) + 1
 	if desperate && words > 3 && clauseEndPattern.MatchString(trimmed) {
 		return true
 	}
