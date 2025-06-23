@@ -16,6 +16,7 @@ import (
 
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/agent/v1/websocket/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
 )
 
 type DeepgramHandler struct {
@@ -99,19 +100,20 @@ func (dch DeepgramHandler) GetSettingsApplied() []*chan *msginterfaces.SettingsA
 
 type voiceV2 struct {
 	dgWS     *client.WSChannel
-	callback msginterfaces.AgentMessageChan
+	callback DeepgramHandler
 	context.ServiceContext
 }
 
-func NewVoiceV2(ctx gctx.Context, svcCtx context.ServiceContext, dgApiKey string, callback msginterfaces.AgentMessageChan) (*voiceV2, error) {
+func NewVoiceV2(ctx gctx.Context, svcCtx context.ServiceContext, dgApiKey string, clientOptions *interfaces.ClientOptions, settings *interfaces.SettingsOptions, handler DeepgramHandler) (*voiceV2, error) {
 	cancel := context.GetCancel(ctx)
-	dgWS, err := client.NewWSUsingChanWithCancel(ctx, cancel, dgApiKey, nil, nil, callback)
+	callback := msginterfaces.AgentMessageChan(handler)
+	dgWS, err := client.NewWSUsingChanWithCancel(ctx, cancel, dgApiKey, clientOptions, settings, callback)
 	if err != nil {
 		return nil, err
 	}
 	return &voiceV2{
 		dgWS,
-		callback,
+		handler,
 		svcCtx,
 	}, nil
 }
@@ -134,94 +136,27 @@ func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader,
 		v.dgWS.Stop()
 		w.Close()
 	}()
-	go v.dgWS.Stream(r)
-	inBuf := make([]byte, 1024)
-
-	go func() {
-		for {
-			select {
-			default:
-				n, err := r.Read(inBuf)
-				if err != nil {
-					return
-				}
-				v.dgWS.ProcessMessage(1, inBuf[:n]) // FIX ME
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		// case :
-		case <-ctx.Done():
-			return
-		}
-	}
+	go v.callback.Run(w) // user <- agent
+	v.dgWS.Stream(r)     // user => agent
 }
 
-func (dch DeepgramHandler) Run() error {
+func (dch DeepgramHandler) Run(w io.Writer) error {
 	wgReceivers := sync.WaitGroup{}
 
 	// Handle binary data
 	wgReceivers.Add(1)
 	go func() {
 		defer wgReceivers.Done()
-		counter := 0
-		lastBytesReceived := time.Now().Add(-7 * time.Second)
+		// counter := 0
+		// lastBytesReceived := time.Now().Add(-7 * time.Second)
 
 		for br := range dch.binaryChan {
 			fmt.Printf("\n\n[Binary Data Received]\n")
 			fmt.Printf("Size: %d bytes\n", len(*br))
-
-			if lastBytesReceived.Add(5 * time.Second).Before(time.Now()) {
-				counter = counter + 1
-				file, err := os.OpenFile(fmt.Sprintf("output_%d.wav", counter), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
-				if err != nil {
-					fmt.Printf("Failed to open file. Err: %v\n", err)
-					continue
-				}
-				// Add WAV header
-				header := []byte{
-					0x52, 0x49, 0x46, 0x46, // "RIFF"
-					0x00, 0x00, 0x00, 0x00, // Placeholder for file size
-					0x57, 0x41, 0x56, 0x45, // "WAVE"
-					0x66, 0x6d, 0x74, 0x20, // "fmt "
-					0x10, 0x00, 0x00, 0x00, // Chunk size (16)
-					0x01, 0x00, // Audio format (1 for PCM)
-					0x01, 0x00, // Number of channels (1)
-					0x80, 0x5d, 0x00, 0x00, // Sample rate (24000)
-					0x00, 0xbb, 0x00, 0x00, // Byte rate (24000 * 2)
-					0x02, 0x00, // Block align (2)
-					0x10, 0x00, // Bits per sample (16)
-					0x64, 0x61, 0x74, 0x61, // "data"
-					0x00, 0x00, 0x00, 0x00, // Placeholder for data size
-				}
-
-				_, err = file.Write(header)
-				if err != nil {
-					fmt.Printf("Failed to write header to file. Err: %v\n", err)
-					continue
-				}
-				file.Close()
-			}
-
-			file, err := os.OpenFile(fmt.Sprintf("output_%d.wav", counter), os.O_APPEND|os.O_WRONLY, 0o644)
+			_, err := w.Write(*br)
 			if err != nil {
-				fmt.Printf("Failed to open file. Err: %v\n", err)
-				continue
+				fmt.Printf("Failed to write binary data: %v\n", err)
 			}
-
-			_, err = file.Write(*br)
-			file.Close()
-
-			if err != nil {
-				fmt.Printf("Failed to write to file. Err: %v\n", err)
-				continue
-			}
-
-			lastBytesReceived = time.Now()
 		}
 	}()
 

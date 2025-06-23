@@ -5,10 +5,12 @@ import (
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/services"
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
 	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
 	"github.com/gorilla/websocket"
 )
 
@@ -55,6 +57,7 @@ var upgrader = websocket.Upgrader{
 func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakWebSocket")
 	lgr.Info("Called")
+	ctx := req.Context()
 
 	conn, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
@@ -72,9 +75,14 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	tOptions.Agent.Listen.Provider["keyterms"] = []string{"Bueller"}
 	tOptions.Agent.Language = "en"
 	tOptions.Agent.Greeting = "Hello! How can I help you today?"
+	tOptions.Audio.Output.Encoding = "wav"
+	tOptions.Audio.Output.Bitrate = 16
+	tOptions.Audio.Output.SampleRate = 16000
+	var clientOptions *interfaces.ClientOptions
+	handler := services.DeepgramHandler{}
 
-	// handler := services.NewGPT4oVoiceV1(r.AppContext)
-	// r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler)
+	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, "api-key", clientOptions, tOptions, handler)
+	r.SM().WebSocketService().StartStreamingResponseSocket(conn, voiceHandler)
 
 	lgr.Info("Leaving...")
 }
