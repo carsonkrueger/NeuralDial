@@ -1,0 +1,2 @@
+[2025-06-25 22:24:46] system: Agent finished speaking
+[2025-06-25 22:24:54] system: User has started speaking

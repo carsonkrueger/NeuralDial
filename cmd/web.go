@@ -60,7 +60,7 @@ func web() {
 	sm.SetAppContext(appCtx)
 	defer appCtx.CleanUp()
 
-	appRouter := router.NewAppRouter(appCtx)
+	appRouter := router.NewAppRouter(appCtx, cfg)
 	appRouter.BuildRouter()
 	if err := appRouter.Start(cfg); err != nil {
 		panic(err)

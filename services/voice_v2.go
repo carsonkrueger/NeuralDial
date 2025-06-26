@@ -4,7 +4,6 @@ import (
 	gctx "context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +17,27 @@ import (
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
 	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
 )
+
+func NewDeepgramHandler(log io.Writer) DeepgramHandler {
+	return DeepgramHandler{
+		binaryChan:                   make(chan *[]byte),
+		openChan:                     make(chan *msginterfaces.OpenResponse),
+		welcomeResponse:              make(chan *msginterfaces.WelcomeResponse),
+		conversationTextResponse:     make(chan *msginterfaces.ConversationTextResponse),
+		userStartedSpeakingResponse:  make(chan *msginterfaces.UserStartedSpeakingResponse),
+		agentThinkingResponse:        make(chan *msginterfaces.AgentThinkingResponse),
+		functionCallRequestResponse:  make(chan *msginterfaces.FunctionCallRequestResponse),
+		agentStartedSpeakingResponse: make(chan *msginterfaces.AgentStartedSpeakingResponse),
+		agentAudioDoneResponse:       make(chan *msginterfaces.AgentAudioDoneResponse),
+		closeChan:                    make(chan *msginterfaces.CloseResponse),
+		errorChan:                    make(chan *msginterfaces.ErrorResponse),
+		unhandledChan:                make(chan *[]byte),
+		injectionRefusedResponse:     make(chan *msginterfaces.InjectionRefusedResponse),
+		keepAliveResponse:            make(chan *msginterfaces.KeepAlive),
+		settingsAppliedResponse:      make(chan *msginterfaces.SettingsAppliedResponse),
+		log:                          log,
+	}
+}
 
 type DeepgramHandler struct {
 	binaryChan                   chan *[]byte
@@ -35,7 +55,7 @@ type DeepgramHandler struct {
 	injectionRefusedResponse     chan *msginterfaces.InjectionRefusedResponse
 	keepAliveResponse            chan *msginterfaces.KeepAlive
 	settingsAppliedResponse      chan *msginterfaces.SettingsAppliedResponse
-	chatLogFile                  *os.File
+	log                          io.Writer
 }
 
 func (dch DeepgramHandler) GetBinary() []*chan *[]byte {
@@ -127,17 +147,18 @@ func (g *voiceV2) Options() models.WebSocketOptions {
 }
 
 func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter) {
+	lgr := v.Lgr("HandleRequestWithStreaming")
+	defer w.Close()
+	lgr.Info("Starting streaming: user <- agent")
+	go v.callback.Run(w) // user <- agent
 	if !v.dgWS.Connect() {
+		lgr.Error("Failed to connect to Deepgram WebSocket")
 		return
 	}
-
-	v.dgWS.Start()
-	defer func() {
-		v.dgWS.Stop()
-		w.Close()
-	}()
-	go v.callback.Run(w) // user <- agent
-	v.dgWS.Stream(r)     // user => agent
+	defer v.dgWS.Stop()
+	lgr.Info("Starting streaming: user => agent")
+	v.dgWS.Stream(r) // user => agent
+	lgr.Info("Leaving...")
 }
 
 func (dch DeepgramHandler) Run(w io.Writer) error {
@@ -377,102 +398,17 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 
 // Helper function to write to chat log
 func (dch *DeepgramHandler) writeToChatLog(role, content string) error {
-	if dch.chatLogFile == nil {
+	if dch.log == nil {
 		return fmt.Errorf("chat log file not initialized")
 	}
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	logEntry := fmt.Sprintf("[%s] %s: %s\n", timestamp, role, content)
 
-	_, err := dch.chatLogFile.WriteString(logEntry)
+	_, err := dch.log.Write([]byte(logEntry))
 	if err != nil {
 		return fmt.Errorf("failed to write to chat log: %v", err)
 	}
 
 	return nil
 }
-
-// Main function
-// func setup() {
-// 	fmt.Printf(" Program starting\n")
-// 	// Print instructions
-// 	fmt.Print("\n\nPress ENTER to exit!\n\n")
-
-// 	// Initialize context
-// 	ctx := gctx.Background()
-// 	fmt.Printf(" Context initialized\n")
-
-// 	// Configure agent
-// 	cOptions := configureAgent()
-// 	fmt.Printf(" Agent configured\n")
-
-// 	// Set transcription options
-
-// 	fmt.Printf(" Transcription options set\n")
-
-// 	// Create handler
-// 	fmt.Printf("Creating new Deepgram WebSocket client...\n")
-// 	handler := NewMyHandler()
-// 	if handler == nil {
-// 		fmt.Printf("Failed to create handler\n")
-// 		return
-// 	}
-// 	fmt.Printf(" Handler created\n")
-// 	defer handler.chatLogFile.Close()
-
-// 	// Create client
-// 	fmt.Printf(" Callback created\n")
-// 	agent.N
-// 	dgClient, err := client.NewWSUsingChan(ctx, "", cOptions, tOptions, nil)
-// 	if err != nil {
-// 		fmt.Printf("ERROR creating LiveTranscription connection:\n- Error: %v\n- Type: %T\n", err, err)
-// 		return
-// 	}
-// 	fmt.Printf(" Deepgram client created\n")
-
-// 	// Connect to Deepgram
-// 	fmt.Printf("Attempting to connect to Deepgram WebSocket...\n")
-// 	bConnected := dgClient.Connect()
-// 	if !bConnected {
-// 		fmt.Printf("WebSocket connection failed - check your API key and network connection\n")
-// 		os.Exit(1)
-// 	}
-// 	fmt.Printf(" Successfully connected to Deepgram WebSocket\n")
-
-// 	// Stream audio from URL
-// 	audioURL := "https://dpgr.am/spacewalk.wav"
-// 	httpClient := new(http.Client)
-// 	resp, err := httpClient.Get(audioURL)
-// 	if err != nil {
-// 		fmt.Printf("Failed to fetch audio from URL. Err: %v\n", err)
-// 		return
-// 	}
-// 	fmt.Printf(" Audio URL fetched, content length: %d bytes\n", resp.ContentLength)
-// 	fmt.Printf("Stream is up and running %s\n", reflect.TypeOf(resp))
-// 	buf := bufio.NewReaderSize(resp.Body, 960*200) // Increase buffer to handle 200 chunks at once
-// 	go func() {
-// 		fmt.Printf(" Starting audio stream goroutine\n")
-// 		fmt.Printf("Starting to stream audio from URL...\n")
-// 		defer resp.Body.Close()
-// 		err = dgClient.Stream(buf)
-// 		if err != nil && err != io.EOF {
-// 			fmt.Printf("Failed to stream audio. Err: %v\n", err)
-// 			return
-// 		}
-// 		fmt.Printf(" Audio stream completed\n")
-// 		fmt.Printf("Finished streaming audio from URL\n")
-// 	}()
-
-// 	// Wait for user input to exit
-// 	fmt.Printf(" Waiting for user input\n")
-// 	input := bufio.NewScanner(os.Stdin)
-// 	input.Scan()
-// 	fmt.Printf(" User input received\n")
-
-// 	// Cleanup
-// 	fmt.Printf(" Starting cleanup sequence...\n")
-// 	fmt.Printf(" Calling dgClient.Stop()\n")
-// 	dgClient.Stop()
-// 	fmt.Printf(" dgClient.Stop() completed\n")
-// 	fmt.Printf("\n\nProgram exiting...\n")
-// }

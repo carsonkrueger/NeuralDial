@@ -29,27 +29,27 @@ templ Speak() {
 
 		function sendData(data) {
 		    console.log(playCount)
-			addBuffer(data);
-		    // speakws.send(data); // use to send to the server consistently
-			if (playCount > 0) {
-			    // wait 100 ms then close the audio context
-			    audioContext.close().then(() => {
-			        playCount = 0;
-			        audioContext = new AudioContext();
-					lastPlaybackTime = audioContext.currentTime;
-					canceled = Date.now();
-			    });
-		    }
+		    speakws.send(data); // use to send to the server consistently
+			// addBuffer(data);
+			// if (playCount > 0) {
+			//     // wait 100 ms then close the audio context
+			//     audioContext.close().then(() => {
+			//         playCount = 0;
+			//         audioContext = new AudioContext();
+			// 		lastPlaybackTime = audioContext.currentTime;
+			// 		canceled = Date.now();
+			//     });
+		 //    }
 		}
 
-		setInterval(() => {
-		    // If user has not spoken for 100ms send buffer through websocket
-			if (lastBufferTime && Date.now() - lastBufferTime > 100) {
-			    lastBufferTime = null;
-				speakws.send(buffer);
-				buffer = new Int16Array(0);
-			}
-		}, 100)
+		// setInterval(() => {
+		//     // If user has not spoken for 100ms send buffer through websocket
+		// 	if (lastBufferTime && Date.now() - lastBufferTime > 100) {
+		// 	    lastBufferTime = null;
+		// 		speakws.send(buffer);
+		// 		buffer = new Int16Array(0);
+		// 	}
+		// }, 100)
 
 		function addBuffer(data) {
 		    newBuffer = new Int16Array(buffer.length + data.length);
@@ -117,7 +117,7 @@ templ Speak() {
 		    }, (error) => {
                 console.error("Failed to decode audio:", error);
 		    });
-}
+		}
 	</script>
 	<div class="bg-black h-screen"/>
 }

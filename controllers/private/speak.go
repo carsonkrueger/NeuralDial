@@ -1,7 +1,9 @@
 package private
 
 import (
+	gctx "context"
 	"net/http"
+	"os"
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
@@ -24,11 +26,13 @@ const (
 
 type speak struct {
 	context.AppContext
+	deepgramKey string
 }
 
-func NewSpeak(ctx context.AppContext) *speak {
+func NewSpeak(ctx context.AppContext, deepgramKey string) *speak {
 	return &speak{
-		AppContext: ctx,
+		AppContext:  ctx,
+		deepgramKey: deepgramKey,
 	}
 }
 
@@ -57,7 +61,8 @@ var upgrader = websocket.Upgrader{
 func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakWebSocket")
 	lgr.Info("Called")
-	ctx := req.Context()
+	ctx, cancel := gctx.WithCancel(req.Context())
+	ctx = context.WithCancel(ctx, cancel)
 
 	conn, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
@@ -75,13 +80,22 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	tOptions.Agent.Listen.Provider["keyterms"] = []string{"Bueller"}
 	tOptions.Agent.Language = "en"
 	tOptions.Agent.Greeting = "Hello! How can I help you today?"
-	tOptions.Audio.Output.Encoding = "wav"
-	tOptions.Audio.Output.Bitrate = 16
-	tOptions.Audio.Output.SampleRate = 16000
-	var clientOptions *interfaces.ClientOptions
-	handler := services.DeepgramHandler{}
+	// tOptions.Audio.Input.Encoding = "wav"
+	// tOptions.Audio.Input.SampleRate = 16000
 
-	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, "api-key", clientOptions, tOptions, handler)
+	clientOptions := interfaces.ClientOptions{
+		EnableKeepAlive: true,
+	}
+
+	logFile, err := os.OpenFile("out.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 500, "Error opening file")
+		return
+	}
+	defer logFile.Close()
+	handler := services.NewDeepgramHandler(logFile)
+
+	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, r.deepgramKey, &clientOptions, tOptions, handler)
 	r.SM().WebSocketService().StartStreamingResponseSocket(conn, voiceHandler)
 
 	lgr.Info("Leaving...")

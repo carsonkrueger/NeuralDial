@@ -23,10 +23,9 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	opts := handler.Options()
 	opts.HandleDefaults()
 
+	lgr := ws.Lgr("StartStreamingResponseSocket")
 	ctx, cancel := gctx.WithCancel(gctx.Background())
 	ctx = context.WithCancel(ctx, cancel)
-	// incoming := make(chan []byte, 10)
-	// outgoing := make(chan models.StreamResponse, 10)
 	incomingR, incomingW := io.Pipe()
 	outgoingR, outgoingW := io.Pipe()
 	buf := make([]byte, 1024*100) // 100 KB
@@ -74,6 +73,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 					return
 				}
 			case <-ctx.Done():
+				lgr.Info("websocketService: context done")
 				return
 			}
 		}
@@ -94,6 +94,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 					return
 				}
 			case <-ctx.Done():
+				lgr.Info("websocketService: context done")
 				return
 			}
 		}
