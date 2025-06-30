@@ -25,7 +25,7 @@ type AppRouter struct {
 	appCtx  context.AppContext
 }
 
-func NewAppRouter(ctx context.AppContext) AppRouter {
+func NewAppRouter(ctx context.AppContext, cfg cfg.Config) AppRouter {
 	return AppRouter{
 		appCtx: ctx,
 		public: []builders.AppPublicRoute{
@@ -39,7 +39,7 @@ func NewAppRouter(ctx context.AppContext) AppRouter {
 			private.NewPrivileges(ctx),
 			private.NewPrivilegeLevels(ctx),
 			private.NewPrivilegeLevelsPrivileges(ctx),
-			private.NewSpeak(ctx),
+			private.NewSpeak(ctx, cfg.DeepgramAPIKey),
 			private.NewWebText(ctx),
 		},
 	}

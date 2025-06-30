@@ -16,6 +16,7 @@ type Config struct {
 	OpenAIAPIKey     string
 	ElevenLabsAPIKey string
 	WhisperModelPath string
+	DeepgramAPIKey   string
 }
 
 type DbConfig struct {
@@ -42,6 +43,7 @@ func LoadConfig() Config {
 		OpenAIAPIKey:     os.Getenv("OPENAI_API_KEY"),
 		ElevenLabsAPIKey: os.Getenv("ELEVEN_LABS_API_KEY"),
 		WhisperModelPath: os.Getenv("WHISPER_MODEL_PATH"),
+		DeepgramAPIKey:   os.Getenv("DEEPGRAM_KEY"),
 		DbConfig: DbConfig{
 			user:     os.Getenv("DB_USER"),
 			password: os.Getenv("DB_PASSWORD"),

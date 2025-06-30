@@ -1,7 +1,9 @@
 package private
 
 import (
+	gctx "context"
 	"net/http"
+	"os"
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
@@ -9,6 +11,8 @@ import (
 	"github.com/carsonkrueger/main/templates/pageLayouts"
 	"github.com/carsonkrueger/main/templates/pages"
 	"github.com/carsonkrueger/main/tools"
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
 	"github.com/gorilla/websocket"
 )
 
@@ -22,11 +26,13 @@ const (
 
 type speak struct {
 	context.AppContext
+	deepgramKey string
 }
 
-func NewSpeak(ctx context.AppContext) *speak {
+func NewSpeak(ctx context.AppContext, deepgramKey string) *speak {
 	return &speak{
-		AppContext: ctx,
+		AppContext:  ctx,
+		deepgramKey: deepgramKey,
 	}
 }
 
@@ -55,6 +61,8 @@ var upgrader = websocket.Upgrader{
 func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakWebSocket")
 	lgr.Info("Called")
+	ctx, cancel := gctx.WithCancel(req.Context())
+	ctx = context.WithCancel(ctx, cancel)
 
 	conn, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
@@ -63,8 +71,35 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	handler := services.NewGPT4oVoiceV1(r.AppContext)
-	r.SM().WebSocketService().StartStreamingResponseSocket(conn, handler)
+	tOptions := agent.NewSettingsConfigurationOptions()
+	tOptions.Agent.Think.Provider["type"] = "open_ai"
+	tOptions.Agent.Think.Provider["model"] = "gpt-4o-mini"
+	tOptions.Agent.Think.Prompt = "You are a helpful AI assistant."
+	tOptions.Agent.Listen.Provider["type"] = "deepgram"
+	tOptions.Agent.Listen.Provider["model"] = "nova-3"
+	tOptions.Agent.Listen.Provider["keyterms"] = []string{"Bueller"}
+	tOptions.Agent.Language = "en"
+	tOptions.Agent.Greeting = "Hello! How can I help you today?"
+	// tOptions.Audio.Output.Bitrate = 16000 * 2 * 8
+	// tOptions.Audio.Output.SampleRate = 16000
+	// tOptions.Audio.Output.Encoding = "pcm"
+	// tOptions.Audio.Input.Encoding = "wav"
+	// tOptions.Audio.Input.SampleRate = 16000
+
+	clientOptions := interfaces.ClientOptions{
+		EnableKeepAlive: true,
+	}
+
+	logFile, err := os.OpenFile("out.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 500, "Error opening file")
+		return
+	}
+	defer logFile.Close()
+	handler := services.NewDeepgramHandler(logFile)
+
+	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, r.deepgramKey, &clientOptions, tOptions, handler)
+	r.SM().WebSocketService().StartStreamingResponseSocket(conn, voiceHandler)
 
 	lgr.Info("Leaving...")
 }

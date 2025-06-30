@@ -85,21 +85,20 @@ type PhoneService interface {
 }
 
 type WebSocketService interface {
-	StartSocket(conn *websocket.Conn, handler SocketHandler)
+	// StartSocket(conn *websocket.Conn, handler SocketHandler)
 	StartStreamingResponseSocket(conn *websocket.Conn, handler StreamingSocketHandler)
 }
 
 type WebSocketHandler interface {
 	Options() models.WebSocketOptions
-	HandleClose()
 }
 
-type SocketHandler interface {
-	WebSocketHandler
-	HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error)
-}
+// type SocketHandler interface {
+// 	WebSocketHandler
+// 	HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error)
+// }
 
 type StreamingSocketHandler interface {
 	WebSocketHandler
-	HandleRequestWithStreaming(ctx gctx.Context, req []byte, out chan<- models.StreamResponse)
+	HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter)
 }
