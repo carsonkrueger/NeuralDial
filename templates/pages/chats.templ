@@ -10,12 +10,11 @@ templ Speak() {
         speakws.onopen = async () => {
             console.log("WebSocket connected");
             await startSpeakingAudioStream(sendData, sampleRate);
-            audioPlayer = await setupAudioPlayerStream();
+            audioPlayer = await setupAudioPlayerStream(sampleRate);
             console.log("WebSocket setup");
         };
 
         speakws.onmessage = async (e) => {
-            console.log("buffering:", e.data);
             if (audioPlayer) {
                 audioPlayer.postMessage(e.data);
             }

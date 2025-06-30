@@ -76,12 +76,12 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 		for {
 			select {
 			default:
-				_, err := outgoingR.Read(buf)
+				n, err := outgoingR.Read(buf)
 				if err != nil {
 					cancel()
 					return
 				}
-				err = conn.WriteMessage(websocket.BinaryMessage, buf)
+				err = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 				if err != nil {
 					return
 				}

@@ -1,7 +1,7 @@
 async function startSpeakingAudioStream(callback, sampleRate) {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        const inputAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const inputAudioCtx = new window.AudioContext();
         const inputSource = inputAudioCtx.createMediaStreamSource(stream);
         await inputAudioCtx.audioWorklet.addModule("/public/audioProcessor.js");
         const inputProcessor = new AudioWorkletNode(inputAudioCtx, "pcm-processor");
@@ -26,8 +26,8 @@ async function startSpeakingAudioStream(callback, sampleRate) {
     }
 }
 
-async function setupAudioPlayerStream() {
-    const outputAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+async function setupAudioPlayerStream(sampleRate) {
+    const outputAudioCtx = new window.AudioContext({ sampleRate });
     await outputAudioCtx.audioWorklet.addModule("/public/audioPlayer.js");
     const outputProcessor = new AudioWorkletNode(outputAudioCtx, "pcm-player");
     outputProcessor.connect(outputAudioCtx.destination);
