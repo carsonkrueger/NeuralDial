@@ -3,7 +3,6 @@ package services
 import (
 	gctx "context"
 	"io"
-	"slices"
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/gorilla/websocket"
@@ -20,9 +19,6 @@ func NewWebSocketService(ctx context.ServiceContext) *webSocketService {
 }
 
 func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, handler context.StreamingSocketHandler) {
-	opts := handler.Options()
-	opts.HandleDefaults()
-
 	lgr := ws.Lgr("StartStreamingResponseSocket")
 	ctx, cancel := gctx.WithCancel(gctx.Background())
 	ctx = context.WithCancel(ctx, cancel)
@@ -59,12 +55,8 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 		for {
 			select {
 			default:
-				msgType, msg, err := conn.ReadMessage()
+				_, msg, err := conn.ReadMessage()
 				if err != nil {
-					cancel()
-					return
-				}
-				if len(opts.AllowedMessageTypes) > 0 && !slices.Contains(opts.AllowedMessageTypes, msgType) {
 					cancel()
 					return
 				}
@@ -100,5 +92,6 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 		}
 	}()
 
+	// main loop
 	handler.HandleRequestWithStreaming(ctx, incomingR, outgoingW)
 }

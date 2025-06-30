@@ -80,6 +80,9 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	tOptions.Agent.Listen.Provider["keyterms"] = []string{"Bueller"}
 	tOptions.Agent.Language = "en"
 	tOptions.Agent.Greeting = "Hello! How can I help you today?"
+	// tOptions.Audio.Output.Bitrate = 16000 * 2 * 8
+	// tOptions.Audio.Output.SampleRate = 16000
+	// tOptions.Audio.Output.Encoding = "pcm"
 	// tOptions.Audio.Input.Encoding = "wav"
 	// tOptions.Audio.Input.SampleRate = 16000
 

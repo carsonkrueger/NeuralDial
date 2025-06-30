@@ -22,8 +22,8 @@ class LinearPCMProcessor extends AudioWorkletProcessor {
         // Assumes the input is mono (1 channel). If there are more channels, they
         // are ignored
         const input = inputList[0][0]; // first channel of first input
-        const outputLeft = outputList[0][0]; // first channel of first input
-        const outputRight = outputList[0][1]; // first channel of first input
+        // const outputLeft = outputList[0][0]; // first channel of first input
+        // const outputRight = outputList[0][1]; // first channel of first input
 
         for (let i = 0; i < input.length; i++) {
             const sample = Math.max(-1, Math.min(1, input[i]));

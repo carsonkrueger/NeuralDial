@@ -10,8 +10,6 @@ import (
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
-	"github.com/carsonkrueger/main/tools"
-	"github.com/gorilla/websocket"
 
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/agent/v1/websocket/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
@@ -139,26 +137,43 @@ func NewVoiceV2(ctx gctx.Context, svcCtx context.ServiceContext, dgApiKey string
 }
 
 func (g *voiceV2) Options() models.WebSocketOptions {
-	return models.WebSocketOptions{
-		PongDeadline:        tools.Ptr(1 * time.Second),
-		PongInterval:        tools.Ptr(8 * time.Second),
-		AllowedMessageTypes: []int{websocket.BinaryMessage},
-	}
+	return models.WebSocketOptions{}
 }
 
 func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter) {
 	lgr := v.Lgr("HandleRequestWithStreaming")
 	defer w.Close()
-	lgr.Info("Starting streaming: user <- agent")
-	go v.callback.Run(w) // user <- agent
-	if !v.dgWS.Connect() {
-		lgr.Error("Failed to connect to Deepgram WebSocket")
-		return
+	buf := make([]byte, 102400)
+	for {
+		select {
+		default:
+			n, err := r.Read(buf)
+			if err != nil {
+				lgr.Error("Failed to read data from reader")
+				return
+			}
+			fmt.Println("read:", n)
+			_, err = w.Write(buf[:n])
+			if err != nil {
+				lgr.Error("Failed to write data from reader")
+				return
+			}
+			fmt.Println("write:", n)
+		case <-ctx.Done():
+			lgr.Error("Context canceled")
+			return
+		}
 	}
-	defer v.dgWS.Stop()
-	lgr.Info("Starting streaming: user => agent")
-	v.dgWS.Stream(r) // user => agent
-	lgr.Info("Leaving...")
+	// lgr.Info("Starting streaming: user <- agent")
+	// go v.callback.Run(w) // user <- agent
+	// if !v.dgWS.Connect() {
+	// 	lgr.Error("Failed to connect to Deepgram WebSocket")
+	// 	return
+	// }
+	// defer v.dgWS.Stop()
+	// lgr.Info("Starting streaming: user -> agent")
+	// v.dgWS.Stream(r) // user => agent
+	// lgr.Info("Leaving...")
 }
 
 func (dch DeepgramHandler) Run(w io.Writer) error {
@@ -172,9 +187,10 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		// lastBytesReceived := time.Now().Add(-7 * time.Second)
 
 		for br := range dch.binaryChan {
-			fmt.Printf("\n\n[Binary Data Received]\n")
+			fmt.Printf("[Binary Data Received]\n")
 			fmt.Printf("Size: %d bytes\n", len(*br))
 			_, err := w.Write(*br)
+			// _, err := w.Write(tools.BasicWAVHeader())
 			if err != nil {
 				fmt.Printf("Failed to write binary data: %v\n", err)
 			}
@@ -194,8 +210,8 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 			// If speaker changed or it's been more than 2 seconds, print accumulated message
 			if currentSpeaker != ctr.Role || time.Since(lastUpdate) > 2*time.Second {
 				if currentMessage.Len() > 0 {
-					fmt.Printf("\n\n[ConversationTextResponse]\n")
-					fmt.Printf("%s: %s\n\n", currentSpeaker, currentMessage.String())
+					fmt.Printf("[ConversationTextResponse]\n")
+					fmt.Printf("%s: %s", currentSpeaker, currentMessage.String())
 
 					// Write to chat log
 					if err := dch.writeToChatLog(currentSpeaker, currentMessage.String()); err != nil {
@@ -228,8 +244,8 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 
 		// Print any remaining message
 		if currentMessage.Len() > 0 {
-			fmt.Printf("\n\n[ConversationTextResponse]\n")
-			fmt.Printf("%s: %s\n\n", currentSpeaker, currentMessage.String())
+			fmt.Printf("[ConversationTextResponse]\n")
+			fmt.Printf("%s: %s", currentSpeaker, currentMessage.String())
 
 			// Write to chat log
 			if err := dch.writeToChatLog(currentSpeaker, currentMessage.String()); err != nil {
@@ -243,12 +259,12 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 
-		for range dch.userStartedSpeakingResponse {
-			fmt.Printf("\n\n[UserStartedSpeakingResponse]\n")
-			fmt.Printf("User has started speaking, waiting for completion...\n\n")
+		for typ := range dch.userStartedSpeakingResponse {
+			fmt.Printf("[UserStartedSpeakingResponse]: %s\n", typ)
+			fmt.Printf("User has started speaking, waiting for completion...")
 
 			// Write to chat log
-			if err := dch.writeToChatLog("system", "User has started speaking"); err != nil {
+			if err := dch.writeToChatLog("system", fmt.Sprintf("User has started speaking: %s", typ)); err != nil {
 				fmt.Printf("Failed to write to chat log: %v\n", err)
 			}
 		}
@@ -260,12 +276,12 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		defer wgReceivers.Done()
 
 		for atr := range dch.agentThinkingResponse {
-			fmt.Printf("\n\n[AgentThinkingResponse]\n")
+			fmt.Printf("[AgentThinkingResponse]\n")
 			fmt.Printf("Agent is processing input: %s\n", atr.Content)
-			fmt.Printf("Waiting for agent's response...\n\n")
+			fmt.Printf("Waiting for agent's response...")
 
 			// Write to chat log
-			if err := dch.writeToChatLog("system", fmt.Sprintf("Agent is processing: %s", atr.Content)); err != nil {
+			if err := dch.writeToChatLog("system", fmt.Sprintf("Agent is processing: %s - %s", atr.Type, atr.Content)); err != nil {
 				fmt.Printf("Failed to write to chat log: %v\n", err)
 			}
 		}
@@ -277,9 +293,9 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		defer wgReceivers.Done()
 
 		for asr := range dch.agentStartedSpeakingResponse {
-			fmt.Printf("\n\n[AgentStartedSpeakingResponse]\n")
+			fmt.Printf("[AgentStartedSpeakingResponse]\n")
 			fmt.Printf("Agent is starting to respond (latency: %.2fms)\n", asr.TotalLatency)
-			fmt.Printf("Processing agent's response...\n\n")
+			fmt.Printf("Processing agent's response...")
 
 			// Write to chat log
 			if err := dch.writeToChatLog("system", "Agent is starting to respond"); err != nil {
@@ -294,8 +310,8 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		defer wgReceivers.Done()
 
 		for range dch.agentAudioDoneResponse {
-			fmt.Printf("\n\n[AgentAudioDoneResponse]\n")
-			fmt.Printf("Agent finished speaking, waiting for next user input...\n\n")
+			fmt.Printf("[AgentAudioDoneResponse]\n")
+			fmt.Printf("Agent finished speaking, waiting for next user input...")
 
 			// Write to chat log
 			if err := dch.writeToChatLog("system", "Agent finished speaking"); err != nil {
@@ -310,8 +326,8 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		defer wgReceivers.Done()
 
 		for range dch.keepAliveResponse {
-			fmt.Printf("\n\n[KeepAliveResponse]\n")
-			fmt.Printf("Connection is alive, waiting for next event...\n\n")
+			fmt.Printf("[KeepAliveResponse]\n")
+			fmt.Printf("Connection is alive, waiting for next event...")
 
 			// Write to chat log
 			if err := dch.writeToChatLog("system", "Keep alive received"); err != nil {
@@ -325,7 +341,7 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 		for range dch.openChan {
-			fmt.Printf("\n\n[OpenResponse]\n\n")
+			fmt.Printf("[OpenResponse]")
 		}
 	}()
 
@@ -334,7 +350,7 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 		for range dch.welcomeResponse {
-			fmt.Printf("\n\n[WelcomeResponse]\n\n")
+			fmt.Printf("[WelcomeResponse]")
 		}
 	}()
 
@@ -343,7 +359,7 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 		for range dch.settingsAppliedResponse {
-			fmt.Printf("\n\n[SettingsAppliedResponse]\n\n")
+			fmt.Printf("[SettingsAppliedResponse]")
 		}
 	}()
 
@@ -352,7 +368,7 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 		for closeResp := range dch.closeChan {
-			fmt.Printf("\n\n[CloseResponse]\n")
+			fmt.Printf("[CloseResponse]\n")
 			fmt.Printf(" Close response received\n")
 			fmt.Printf(" Close response type: %+v\n", closeResp)
 			fmt.Printf("\n")
@@ -367,8 +383,8 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 			fmt.Printf("\n[ErrorResponse]\n")
 			fmt.Printf("\nError.Type: %s\n", er.ErrCode)
 			fmt.Printf("Error.Message: %s\n", er.ErrMsg)
-			fmt.Printf("Error.Description: %s\n\n", er.Description)
-			fmt.Printf("Error.Variant: %s\n\n", er.Variant)
+			fmt.Printf("Error.Description: %s", er.Description)
+			fmt.Printf("Error.Variant: %s", er.Variant)
 		}
 	}()
 
@@ -387,7 +403,7 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 	go func() {
 		defer wgReceivers.Done()
 		for range dch.functionCallRequestResponse {
-			fmt.Printf("\n\n[FunctionCallRequestResponse]\n\n")
+			fmt.Printf("[FunctionCallRequestResponse]")
 		}
 	}()
 
