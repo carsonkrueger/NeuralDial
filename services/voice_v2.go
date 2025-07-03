@@ -143,37 +143,37 @@ func (g *voiceV2) Options() models.WebSocketOptions {
 func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter) {
 	lgr := v.Lgr("HandleRequestWithStreaming")
 	defer w.Close()
-	buf := make([]byte, 102400)
-	for {
-		select {
-		default:
-			n, err := r.Read(buf)
-			if err != nil {
-				lgr.Error("Failed to read data from reader")
-				return
-			}
-			fmt.Println("read:", n)
-			_, err = w.Write(buf[:n])
-			if err != nil {
-				lgr.Error("Failed to write data from reader")
-				return
-			}
-			fmt.Println("write:", n)
-		case <-ctx.Done():
-			lgr.Error("Context canceled")
-			return
-		}
-	}
-	// lgr.Info("Starting streaming: user <- agent")
-	// go v.callback.Run(w) // user <- agent
-	// if !v.dgWS.Connect() {
-	// 	lgr.Error("Failed to connect to Deepgram WebSocket")
-	// 	return
+	// buf := make([]byte, 102400)
+	// for {
+	// 	select {
+	// 	default:
+	// 		n, err := r.Read(buf)
+	// 		if err != nil {
+	// 			lgr.Error("Failed to read data from reader")
+	// 			return
+	// 		}
+	// 		fmt.Println("read:", n)
+	// 		_, err = w.Write(buf[:n])
+	// 		if err != nil {
+	// 			lgr.Error("Failed to write data from reader")
+	// 			return
+	// 		}
+	// 		fmt.Println("write:", n)
+	// 	case <-ctx.Done():
+	// 		lgr.Error("Context canceled")
+	// 		return
+	// 	}
 	// }
-	// defer v.dgWS.Stop()
-	// lgr.Info("Starting streaming: user -> agent")
-	// v.dgWS.Stream(r) // user => agent
-	// lgr.Info("Leaving...")
+	lgr.Info("Starting streaming: user <- agent")
+	go v.callback.Run(w) // user <- agent
+	if !v.dgWS.Connect() {
+		lgr.Error("Failed to connect to Deepgram WebSocket")
+		return
+	}
+	defer v.dgWS.Stop()
+	lgr.Info("Starting streaming: user -> agent")
+	v.dgWS.Stream(r) // user => agent
+	lgr.Info("Leaving...")
 }
 
 func (dch DeepgramHandler) Run(w io.Writer) error {

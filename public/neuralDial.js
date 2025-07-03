@@ -11,11 +11,9 @@ async function startSpeakingAudioStream(callback, sampleRate) {
         const doDownSample = inputAudioCtx.sampleRate > sampleRate
 
         inputProcessor.port.onmessage = (e) => {
-            if (!isSpeakingInt16(e.data, 0.02)) return;
+            // if (!isSpeakingInt16(e.data, 0.02)) return;
             if (doDownSample) {
-                console.log("before:", e.data.length);
                 const downSampled = downSampleInt16Buffer(e.data, inputAudioCtx.sampleRate, sampleRate)
-                console.log("down:", downSampled.length);
                 callback(downSampled);
             } else {
                 callback(e.data);
