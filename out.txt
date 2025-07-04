@@ -1,2 +1,17 @@
-[2025-06-25 22:24:46] system: Agent finished speaking
-[2025-06-25 22:24:54] system: User has started speaking
+[2025-07-04 10:47:59] system: Agent finished speaking
+[2025-07-04 10:52:05] system: Agent finished speaking
+[2025-07-04 10:52:32] system: Agent finished speaking
+[2025-07-04 10:53:30] system: Agent finished speaking
+[2025-07-04 10:53:33] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-04 10:53:33] assistant: Hello! How can I help you today?
+[2025-07-04 10:53:33] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-04 10:53:38] user: Hello.
+[2025-07-04 10:53:39] system: Agent finished speaking
+[2025-07-04 10:53:46] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-04 10:53:47] assistant: Hello! How can I assist you today?
+[2025-07-04 10:53:48] user: Can you tell me about Club Penguin?
+[2025-07-04 10:53:56] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-04 10:53:56] system: Agent finished speaking
+[2025-07-04 10:53:58] assistant: Certainly! Club Penguin was a massively multiplayer online game (MMO) designed for children, launched by New Horizon Interactive (now known as Disney Canada Inc.) in October 2005.
+[2025-07-04 10:53:59] user: Actually, I don't want to know about Club Penguin.
+[2025-07-04 10:54:00] system: Agent finished speaking

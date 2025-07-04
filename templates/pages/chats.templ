@@ -1,31 +1,13 @@
 package pages
 
 templ Speak() {
+	<script src="/public/neuralDial.js"></script>
 	<script>
-        let speakws = new WebSocket("/speak/ws");
-        speakws.binaryType = "arraybuffer";
-        const sampleRate = 16000;
-        let audioPlayer = null;
-
-        speakws.onopen = async () => {
-            console.log("WebSocket connected");
-            await startSpeakingAudioStream(sendData, sampleRate);
-            audioPlayer = await setupAudioPlayerStream(sampleRate);
-            console.log("WebSocket setup");
-        };
-
-        speakws.onmessage = async (e) => {
-            if (audioPlayer) {
-                audioPlayer.postMessage(e.data);
-            }
-        };
-
-        function sendData(data) {
-            console.log("sending:", data.length);
-            speakws.send(data);
-        }
+		const nd = new NeuralDial();
 	</script>
-	<div class="bg-black h-screen"/>
+	<div class="bg-black h-screen">
+		<button class="text-white" onclick="nd.startWebsocket()">Start</button>
+	</div>
 }
 
 templ TextChat() {
