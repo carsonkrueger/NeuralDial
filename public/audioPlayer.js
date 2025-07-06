@@ -5,10 +5,17 @@ class LinearPCMPlayer extends AudioWorkletProcessor {
         this.readOffset = 0;
         this.currentBuffer = null;
 
-        this.port.onmessage = (event) => {
-            console.log(event.data.length)
-            const pcmData = new Int16Array(event.data);
-            this.bufferQueue.push(pcmData);
+        this.port.onmessage = (e) => {
+            switch (e.data) {
+                case 'clear':
+                    this.clear();
+                    break;
+                default:
+                    console.log(event.data.length)
+                    const pcmData = new Int16Array(event.data);
+                    this.bufferQueue.push(pcmData);
+                    break;
+            }
         };
     }
 
@@ -33,6 +40,12 @@ class LinearPCMPlayer extends AudioWorkletProcessor {
         }
 
         return true; // keep processor alive
+    }
+
+    clear() {
+        this.bufferQueue = [];
+        this.currentBuffer = null;
+        this.readOffset = 0;
     }
 }
 

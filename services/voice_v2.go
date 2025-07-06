@@ -2,14 +2,17 @@ package services
 
 import (
 	gctx "context"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
+	"github.com/gorilla/websocket"
 
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/agent/v1/websocket/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
@@ -140,30 +143,11 @@ func (g *voiceV2) Options() models.WebSocketOptions {
 	return models.WebSocketOptions{}
 }
 
-func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter) {
+func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r models.StreamingReader, w models.StreamingWriter[models.StreamingResponseBody]) {
 	lgr := v.Lgr("HandleRequestWithStreaming")
-	defer w.Close()
-	// buf := make([]byte, 102400)
-	// for {
-	// 	select {
-	// 	default:
-	// 		n, err := r.Read(buf)
-	// 		if err != nil {
-	// 			lgr.Error("Failed to read data from reader")
-	// 			return
-	// 		}
-	// 		fmt.Println("read:", n)
-	// 		_, err = w.Write(buf[:n])
-	// 		if err != nil {
-	// 			lgr.Error("Failed to write data from reader")
-	// 			return
-	// 		}
-	// 		fmt.Println("write:", n)
-	// 	case <-ctx.Done():
-	// 		lgr.Error("Context canceled")
-	// 		return
-	// 	}
-	// }
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
 	lgr.Info("Starting streaming: user <- agent")
 	go v.callback.Run(w) // user <- agent
 	if !v.dgWS.Connect() {
@@ -172,11 +156,23 @@ func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader,
 	}
 	defer v.dgWS.Stop()
 	lgr.Info("Starting streaming: user -> agent")
-	v.dgWS.Stream(r) // user => agent
-	lgr.Info("Leaving...")
+	v.dgWS.Stream(pr) // user => agent
+
+	// handle streaming data from our websocket to the deepgram websocket
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case res := <-r:
+			if _, err := pw.Write(res); err != nil {
+				lgr.Error("Failed to write data to pipe writer")
+				return
+			}
+		}
+	}
 }
 
-func (dch DeepgramHandler) Run(w io.Writer) error {
+func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponseBody]) error {
 	wgReceivers := sync.WaitGroup{}
 
 	// Handle binary data
@@ -188,11 +184,12 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 
 		for br := range dch.binaryChan {
 			fmt.Printf("[Binary Data Received]\n")
-			fmt.Printf("Size: %d bytes\n", len(*br))
-			_, err := w.Write(*br)
-			// _, err := w.Write(tools.BasicWAVHeader())
-			if err != nil {
-				fmt.Printf("Failed to write binary data: %v\n", err)
+			w <- models.StreamingResponse[models.StreamingResponseBody]{
+				Type: websocket.BinaryMessage,
+				Data: models.StreamingResponseBody{
+					Type: models.SR_AGENT_SPEAK,
+					Data: *br,
+				},
 			}
 		}
 	}()
@@ -293,9 +290,17 @@ func (dch DeepgramHandler) Run(w io.Writer) error {
 		defer wgReceivers.Done()
 
 		for asr := range dch.agentStartedSpeakingResponse {
-			fmt.Printf("[AgentStartedSpeakingResponse]\n")
 			fmt.Printf("Agent is starting to respond (latency: %.2fms)\n", asr.TotalLatency)
-			fmt.Printf("Processing agent's response...")
+
+			var latencyBytes [8]byte
+			binary.BigEndian.PutUint64(latencyBytes[:], math.Float64bits(asr.TotalLatency))
+			w <- models.StreamingResponse[models.StreamingResponseBody]{
+				Type: websocket.BinaryMessage,
+				Data: models.StreamingResponseBody{
+					Type: models.SR_AGENT_SPEAK,
+					Data: latencyBytes[:],
+				},
+			}
 
 			// Write to chat log
 			if err := dch.writeToChatLog("system", "Agent is starting to respond"); err != nil {

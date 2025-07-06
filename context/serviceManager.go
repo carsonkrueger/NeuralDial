@@ -3,6 +3,7 @@ package context
 import (
 	gctx "context"
 	"database/sql"
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -93,12 +94,7 @@ type WebSocketHandler interface {
 	Options() models.WebSocketOptions
 }
 
-// type SocketHandler interface {
-// 	WebSocketHandler
-// 	HandleRequest(ctx gctx.Context, msgType int, req []byte) (*int, []byte, error)
-// }
-
 type StreamingSocketHandler interface {
 	WebSocketHandler
-	HandleRequestWithStreaming(ctx gctx.Context, r *io.PipeReader, w *io.PipeWriter)
+	HandleRequestWithStreaming(ctx gctx.Context, r models.StreamingReader, w models.StreamingWriter[json.Marshaler])
 }

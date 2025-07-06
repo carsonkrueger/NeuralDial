@@ -1,19 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/carsonkrueger/main/tools"
 )
-
-type StreamResponse struct {
-	MsgType *int
-	Done    bool
-	Err     error
-	// id of data if any
-	ID   *string
-	Data []byte
-}
 
 type WebSocketOptions struct {
 	KeepAliveDuration  time.Duration
@@ -37,4 +29,28 @@ func (opts *WebSocketOptions) HandleDefaults() {
 	if opts.PongInterval == nil {
 		opts.PongInterval = tools.Ptr(10 * time.Second)
 	}
+}
+
+type StreamingResponse[T json.Marshaler] struct {
+	Type int
+	Data T
+}
+
+type StreamingReader <-chan []byte
+type StreamingWriter[T json.Marshaler] chan<- StreamingResponse[T]
+
+type StreamingResponseBodyType string
+
+const (
+	SR_AGENT_START StreamingResponseBodyType = "agent_start"
+	SR_AGENT_SPEAK StreamingResponseBodyType = "agent_speak"
+)
+
+type StreamingResponseBody struct {
+	Type StreamingResponseBodyType
+	Data []byte
+}
+
+func (s StreamingResponseBody) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s)
 }

@@ -2,9 +2,10 @@ package services
 
 import (
 	gctx "context"
-	"io"
+	"encoding/json"
 
 	"github.com/carsonkrueger/main/context"
+	"github.com/carsonkrueger/main/models"
 	"github.com/gorilla/websocket"
 )
 
@@ -22,36 +23,11 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	lgr := ws.Lgr("StartStreamingResponseSocket")
 	ctx, cancel := gctx.WithCancel(gctx.Background())
 	ctx = context.WithCancel(ctx, cancel)
-	incomingR, incomingW := io.Pipe()
-	outgoingR, outgoingW := io.Pipe()
-	buf := make([]byte, 1024*100) // 100 KB
-
-	// conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
-	// conn.SetPongHandler(func(string) error {
-	// 	return conn.SetReadDeadline(time.Now().Add(opts.KeepAliveDuration))
-	// })
-
-	// // PING PONG Handler
-	// go func() {
-	// 	ticker := time.NewTicker(*opts.PongInterval)
-	// 	defer ticker.Stop()
-	// 	for {
-	// 		select {
-	// 		case <-ticker.C:
-	// 			_ = conn.SetWriteDeadline(time.Now().Add(*opts.PongDeadline))
-	// 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-	// 				cancel()
-	// 				return
-	// 			}
-	// 		case <-ctx.Done():
-	// 			return
-	// 		}
-	// 	}
-	// }()
+	incoming := make(chan []byte)
+	outgoing := make(chan models.StreamingResponse[json.Marshaler])
 
 	// Reader goroutine
 	go func() {
-		defer incomingW.Close()
 		for {
 			select {
 			default:
@@ -60,10 +36,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 					cancel()
 					return
 				}
-				_, err = incomingW.Write(msg)
-				if err != nil {
-					return
-				}
+				incoming <- msg
 			case <-ctx.Done():
 				lgr.Info("websocketService: context done")
 				return
@@ -73,15 +46,15 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 
 	// writer goroutine
 	go func() {
+		defer close(outgoing)
 		for {
 			select {
-			default:
-				n, err := outgoingR.Read(buf)
+			case res := <-outgoing:
+				bytes, err := res.Data.MarshalJSON()
 				if err != nil {
-					cancel()
 					return
 				}
-				err = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
+				err = conn.WriteMessage(res.Type, bytes)
 				if err != nil {
 					return
 				}
@@ -93,5 +66,5 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	}()
 
 	// main loop
-	handler.HandleRequestWithStreaming(ctx, incomingR, outgoingW)
+	handler.HandleRequestWithStreaming(ctx, incoming, outgoing)
 }

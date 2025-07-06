@@ -1,3 +1,8 @@
+WsType = {
+    AGENT_SPEAK: "agent_speak",
+    USER_SPEAK: "user_speak"
+}
+
 
 class NeuralDial {
     started = false;
@@ -18,9 +23,16 @@ class NeuralDial {
             console.log("WebSocket setup");
         };
 
-        speakws.onmessage = async (e) => {
-            if (audioPlayer) {
-                audioPlayer.postMessage(e.data);
+        speakws.onmessage = (e) => {
+            switch (e.data.type) {
+                case WsType.AGENT_SPEAK:
+                    console.log("Received agent speak message");
+                    audioPlayer.postMessage(e.data.msg);
+                    break;
+                case WsType.USER_SPEAK:
+                    console.log("Received user speak message");
+                    audioPlayer.postMessage('clear')
+                    break;
             }
         };
 
@@ -60,7 +72,7 @@ class NeuralDial {
         await outputAudioCtx.audioWorklet.addModule("/public/audioPlayer.js");
         const outputProcessor = new AudioWorkletNode(outputAudioCtx, "pcm-player");
         outputProcessor.connect(outputAudioCtx.destination);
-        return outputProcessor.port;
+        return outputProcessor;
     }
 
     isSpeakingInt16(int16Data, threshold) {

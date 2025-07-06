@@ -2,12 +2,51 @@ package pages
 
 templ Speak() {
 	<script src="/public/neuralDial.js"></script>
+	<div class="bg-black h-screen px-32 flex flex-col justify-center items-center">
+		<button class="text-white mb-32" onclick="nd.startWebsocket()">Start Chat</button>
+		<form
+			hx-post="/speak/options"
+			hx-swap="none"
+			class="text-white border-white flex flex-col gap-4"
+		>
+			<div class="flex flex-col gap-2">
+				<label for="think-prompt">Prompt</label>
+				<textarea name="think-prompt" rows="10" cols="80" class="border border-white rounded-sm p-1"/>
+			</div>
+			<div class="flex flex-col gap-2">
+				<label for="greeting">Greeting</label>
+				<textarea name="greeting" rows="4" cols="80" class="border border-white rounded-sm p-1"/>
+			</div>
+			<div class="flex gap-4">
+				<div class="flex flex-col justify-center items-center">
+					<label for="model">Thinking Model:</label>
+				 	<select name="think-model">
+						<option value="open_ai">Open AI</option>
+					</select>
+				</div>
+				<div class="flex flex-col justify-center items-center">
+					<label for="listen-model">Listening Model:</label>
+				 	<select name="listen-model">
+						<option value="deepgram">Deepgram</option>
+					</select>
+				</div>
+				<div class="flex flex-col justify-center items-center">
+					<label>Temperature: <span id="temperature-val">1</span></label>
+					<input oninput="updateTemperature()" id="temp" name="temperature" type="range" min="0" max="1" step="0.1"/>
+				</div>
+			</div>
+			<button>Save</button>
+		</form>
+	</div>
 	<script>
 		const nd = new NeuralDial();
+		const temperatureInput = document.getElementById("temp")
+
+		function updateTemperature() {
+		    const temperature = temperatureInput.value;
+		    document.getElementById("temperature-val").innerText = temperature;
+		}
 	</script>
-	<div class="bg-black h-screen">
-		<button class="text-white" onclick="nd.startWebsocket()">Start</button>
-	</div>
 }
 
 templ TextChat() {
