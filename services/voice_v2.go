@@ -179,8 +179,6 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 	wgReceivers.Add(1)
 	go func() {
 		defer wgReceivers.Done()
-		// counter := 0
-		// lastBytesReceived := time.Now().Add(-7 * time.Second)
 
 		for br := range dch.binaryChan {
 			fmt.Printf("[Binary Data Received]\n")

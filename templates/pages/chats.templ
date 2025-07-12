@@ -1,6 +1,19 @@
 package pages
 
-templ Speak() {
+import (
+	"strconv"
+
+	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
+)
+
+templ Speak(opts *interfaces.SettingsOptions) {
+	{{
+		float, ok := opts.Agent.Think.Provider["temperature"].(float64)
+		if !ok {
+			float = 1
+		}
+		tempStr := strconv.FormatFloat(float, 'f', 1, 64)
+	}}
 	<script src="/public/neuralDial.js"></script>
 	<div class="bg-black h-screen px-32 flex flex-col justify-center items-center">
 		<button class="text-white mb-32" onclick="nd.startWebsocket()">Start Chat</button>
@@ -21,18 +34,20 @@ templ Speak() {
 				<div class="flex flex-col justify-center items-center">
 					<label for="model">Thinking Model:</label>
 				 	<select name="think-model">
-						<option value="open_ai">Open AI</option>
+						<option value="gpt-4o-mini">4o Mini</option>
+						<option value="gpt-4.1-mini">4.1 Mini</option>
+						<option value="gpt-4.1-nano">4.1 Nano</option>
 					</select>
 				</div>
 				<div class="flex flex-col justify-center items-center">
 					<label for="listen-model">Listening Model:</label>
 				 	<select name="listen-model">
-						<option value="deepgram">Deepgram</option>
+						<option value="nova-3">Nova 3</option>
 					</select>
 				</div>
 				<div class="flex flex-col justify-center items-center">
-					<label>Temperature: <span id="temperature-val">1</span></label>
-					<input oninput="updateTemperature()" id="temp" name="temperature" type="range" min="0" max="1" step="0.1"/>
+					<label>Temperature: <span id="temperature-val">{ tempStr }</span></label>
+					<input value={ tempStr } oninput="updateTemperature()" id="temp" name="think-temperature" type="range" min="0" max="2" step="0.1"/>
 				</div>
 			</div>
 			<button>Save</button>

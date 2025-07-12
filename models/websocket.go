@@ -47,8 +47,8 @@ const (
 )
 
 type StreamingResponseBody struct {
-	Type StreamingResponseBodyType
-	Data []byte
+	Type StreamingResponseBodyType `json:"type"`
+	Data []byte                    `json:"data"`
 }
 
 func (s StreamingResponseBody) MarshalJSON() ([]byte, error) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/carsonkrueger/main/builders"
 	"github.com/carsonkrueger/main/context"
@@ -53,7 +54,7 @@ func (r *speak) speakGet(res http.ResponseWriter, req *http.Request) {
 	lgr := r.Lgr("speakGet")
 	lgr.Info("Called")
 	ctx := req.Context()
-	page := pageLayouts.Index(pages.Speak())
+	page := pageLayouts.Index(pages.Speak(r.GetOptions(ctx)))
 	page.Render(ctx, res)
 }
 
@@ -67,7 +68,6 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	lgr.Info("Called")
 	ctx, cancel := gctx.WithCancel(req.Context())
 	ctx = context.WithCancel(ctx, cancel)
-	userID := context.GetUserId(ctx)
 
 	conn, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
@@ -88,7 +88,7 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	defer logFile.Close()
 	handler := services.NewDeepgramHandler(logFile)
 
-	tOptions := r.GetOptions(userID)
+	tOptions := r.GetOptions(ctx)
 	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, r.deepgramKey, &clientOptions, tOptions, handler)
 	r.SM().WebSocketService().StartStreamingResponseSocket(conn, voiceHandler)
 
@@ -105,24 +105,31 @@ func (r *speak) speakOptionsPost(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userID := context.GetUserId(ctx)
-	opts := r.GetOptions(userID)
+	opts := r.GetOptions(ctx)
 	opts.Agent.Think.Prompt = req.FormValue("think-prompt")
+	fmt.Printf("%v\n", opts.Agent.Think.Prompt)
 	opts.Agent.Think.Provider["model"] = req.FormValue("think-model")
-	opts.Agent.Think.Provider["temperature"] = req.FormValue("think-temperature")
-	opts.Agent.Think.Provider["model"] = req.FormValue("think-model")
+	fmt.Printf("%v\n", opts.Agent.Think.Provider["model"])
+	float, err := strconv.ParseFloat(req.FormValue("think-temperature"), 64)
+	if err != nil {
+		tools.HandleError(req, res, lgr, err, 400, "Error parsing temperature")
+		return
+	}
+	opts.Agent.Think.Provider["temperature"] = float
+	fmt.Printf("%v\n", opts.Agent.Think.Provider["temperature"])
 	opts.Agent.Listen.Provider["model"] = req.FormValue("listen-model")
+	fmt.Printf("%v\n", opts.Agent.Listen.Provider["model"])
 	opts.Agent.Listen.Provider["keyterms"] = req.FormValue("listen-keyterms")
+	fmt.Printf("%v\n", opts.Agent.Listen.Provider["keyterms"])
 	opts.Agent.Greeting = req.FormValue("greeting")
-
-	fmt.Println("%v", opts.Agent)
+	fmt.Printf("%v\n", opts.Agent.Greeting)
 }
 
 func (r *speak) DefaultOptions() *interfaces.SettingsOptions {
 	tOptions := agent.NewSettingsConfigurationOptions()
 	tOptions.Agent.Think.Provider["type"] = "open_ai"
 	tOptions.Agent.Think.Provider["model"] = "gpt-4o-mini"
-	tOptions.Agent.Think.Provider["temperature"] = "0.7"
+	tOptions.Agent.Think.Provider["temperature"] = 0.7
 	tOptions.Agent.Think.Prompt = "You are a helpful AI assistant."
 	tOptions.Agent.Listen.Provider["type"] = "deepgram"
 	tOptions.Agent.Listen.Provider["model"] = "nova-3"
@@ -131,7 +138,8 @@ func (r *speak) DefaultOptions() *interfaces.SettingsOptions {
 	return tOptions
 }
 
-func (r *speak) GetOptions(userID int64) *interfaces.SettingsOptions {
+func (r *speak) GetOptions(ctx gctx.Context) *interfaces.SettingsOptions {
+	userID := context.GetUserId(ctx)
 	key := fmt.Sprintf("as:%d", userID)
 	if opts, ok := r.settings[key]; ok {
 		return opts
@@ -139,7 +147,8 @@ func (r *speak) GetOptions(userID int64) *interfaces.SettingsOptions {
 	return r.DefaultOptions()
 }
 
-func (r *speak) SetOptions(userID int64, opts *interfaces.SettingsOptions) {
+func (r *speak) SetOptions(ctx gctx.Context, opts *interfaces.SettingsOptions) {
+	userID := context.GetUserId(ctx)
 	key := fmt.Sprintf("as:%d", userID)
 	r.settings[key] = opts
 }

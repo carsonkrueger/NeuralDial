@@ -2,7 +2,6 @@ package services
 
 import (
 	gctx "context"
-	"encoding/json"
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
@@ -24,7 +23,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 	ctx, cancel := gctx.WithCancel(gctx.Background())
 	ctx = context.WithCancel(ctx, cancel)
 	incoming := make(chan []byte)
-	outgoing := make(chan models.StreamingResponse[json.Marshaler])
+	outgoing := make(chan models.StreamingResponse[models.StreamingResponseBody])
 
 	// Reader goroutine
 	go func() {
@@ -38,7 +37,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 				}
 				incoming <- msg
 			case <-ctx.Done():
-				lgr.Info("websocketService: context done")
+				lgr.Info("ws service: reader done")
 				return
 			}
 		}
@@ -59,7 +58,7 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 					return
 				}
 			case <-ctx.Done():
-				lgr.Info("websocketService: context done")
+				lgr.Info("ws service: writer done")
 				return
 			}
 		}

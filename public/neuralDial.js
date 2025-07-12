@@ -27,11 +27,15 @@ class NeuralDial {
             switch (e.data.type) {
                 case WsType.AGENT_SPEAK:
                     console.log("Received agent speak message");
-                    audioPlayer.postMessage(e.data.msg);
+                    audioPlayer.postMessage(e.data.data);
                     break;
                 case WsType.USER_SPEAK:
                     console.log("Received user speak message");
                     audioPlayer.postMessage('clear')
+                    break;
+                default:
+                    console.log("Received unknown message", e.data);
+                    console.log(e.data.type);
                     break;
             }
         };
