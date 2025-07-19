@@ -2,10 +2,12 @@ package services
 
 import (
 	gctx "context"
+	"encoding/json"
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 type webSocketService struct {
@@ -33,8 +35,10 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 				_, msg, err := conn.ReadMessage()
 				if err != nil {
 					cancel()
+					lgr.Warn("Closing connection - failed read")
 					return
 				}
+				lgr.Debug("Received msg", zap.Int("size", len(msg)))
 				incoming <- msg
 			case <-ctx.Done():
 				lgr.Info("ws service: reader done")
@@ -49,12 +53,15 @@ func (ws *webSocketService) StartStreamingResponseSocket(conn *websocket.Conn, h
 		for {
 			select {
 			case res := <-outgoing:
-				bytes, err := res.Data.MarshalJSON()
+				bytes, err := json.Marshal(res.Data)
 				if err != nil {
+					lgr.Warn("Closing connection - failed marshal")
 					return
 				}
+				lgr.Debug("Sending msg", zap.Int("size", len(bytes)))
 				err = conn.WriteMessage(res.Type, bytes)
 				if err != nil {
+					lgr.Warn("Closing connection - failed write")
 					return
 				}
 			case <-ctx.Done():

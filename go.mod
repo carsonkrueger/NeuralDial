@@ -28,21 +28,21 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/deepgram/deepgram-go-sdk/v3 v3.1.1 // indirect
+	github.com/deepgram/deepgram-go-sdk/v3 v3.2.0 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvonthenen/websocket v1.5.1-dyv.2 // indirect
-	github.com/fatih/color v1.17.0 // indirect
-	github.com/go-logr/logr v1.4.1 // indirect
+	github.com/fatih/color v1.18.0 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gordonklaus/portaudio v0.0.0-20230709114228-aafa478834f5 // indirect
-	github.com/gorilla/schema v1.3.0 // indirect
+	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
@@ -65,7 +65,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/klog/v2 v2.110.1 // indirect
+	k8s.io/klog/v2 v2.130.1 // indirect
 )

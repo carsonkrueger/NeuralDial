@@ -51,13 +51,11 @@ func (r *privilegeLevels) privilegeLevelsSelectGet(res http.ResponseWriter, req 
 	}
 
 	var options []datainput.SelectOptions
-	if levels != nil {
-		for _, lvl := range levels {
-			options = append(options, datainput.SelectOptions{
-				Value: strconv.FormatInt(lvl.ID, 10),
-				Label: lvl.Name,
-			})
-		}
+	for _, lvl := range levels {
+		options = append(options, datainput.SelectOptions{
+			Value: strconv.FormatInt(lvl.ID, 10),
+			Label: lvl.Name,
+		})
 	}
 
 	datainput.Select("privileges-levels-select", "privilege-levels", defaultLevel, options, nil).Render(ctx, res)

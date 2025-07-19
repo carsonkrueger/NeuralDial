@@ -1,5 +1,6 @@
 WsType = {
     AGENT_SPEAK: "agent_speak",
+    AGENT_TRANSCRIBE: "agent_transcribe",
     USER_SPEAK: "user_speak"
 }
 
@@ -24,23 +25,30 @@ class NeuralDial {
         };
 
         speakws.onmessage = (e) => {
-            switch (e.data.type) {
+            const jsonStr = new TextDecoder().decode(e.data);
+            const msg = JSON.parse(jsonStr);
+            switch (msg.type) {
                 case WsType.AGENT_SPEAK:
-                    console.log("Received agent speak message");
-                    audioPlayer.postMessage(e.data.data);
+                    console.log("AGENT");
+                    audioPlayer.port.postMessage(base64ToInt16Array(msg.data));
+                    break;
+                case WsType.AGENT_TRANSCRIBE:
+                    const bytes = new Uint8Array(base64ToUint8Array(msg.data));
+                    const decoder = new TextDecoder();
+                    console.log("AGENT TRANSCRIBE:", decoder.decode(bytes));
                     break;
                 case WsType.USER_SPEAK:
-                    console.log("Received user speak message");
-                    audioPlayer.postMessage('clear')
+                    console.log("USER");
+                    audioPlayer.port.postMessage('clear');
                     break;
                 default:
-                    console.log("Received unknown message", e.data);
-                    console.log(e.data.type);
+                    console.log("Received unknown message", msg);
                     break;
             }
         };
 
         function sendData(data) {
+            console.log('sending data', data);
             speakws.send(data);
         }
     }
@@ -112,4 +120,30 @@ class NeuralDial {
         }
         return result;
     }
+}
+
+
+function base64ToUint8Array(base64) {
+    const binaryStr = atob(base64);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return bytes;
+}
+
+function base64ToInt16Array(base64) {
+    const binaryStr = atob(base64);
+    const len = binaryStr.length / 2; // 2 bytes per int16
+    const buffer = new ArrayBuffer(binaryStr.length);
+    const uint8View = new Uint8Array(buffer);
+
+    for (let i = 0; i < binaryStr.length; i++) {
+        uint8View[i] = binaryStr.charCodeAt(i);
+    }
+
+    // Create Int16Array over the same buffer, using little-endian interpretation
+    // If your Go data is in little-endian (typical), this will align correctly.
+    return new Int16Array(buffer);
 }

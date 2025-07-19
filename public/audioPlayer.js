@@ -8,11 +8,12 @@ class LinearPCMPlayer extends AudioWorkletProcessor {
         this.port.onmessage = (e) => {
             switch (e.data) {
                 case 'clear':
+                    console.log('Clearing buffer');
                     this.clear();
                     break;
                 default:
-                    console.log(event.data.length)
-                    const pcmData = new Int16Array(event.data);
+                    console.log(e.data.length)
+                    const pcmData = new Int16Array(e.data);
                     this.bufferQueue.push(pcmData);
                     break;
             }

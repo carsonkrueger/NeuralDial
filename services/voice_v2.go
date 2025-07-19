@@ -12,7 +12,6 @@ import (
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
-	"github.com/gorilla/websocket"
 
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/agent/v1/websocket/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
@@ -100,7 +99,8 @@ func (dch DeepgramHandler) GetError() []*chan *msginterfaces.ErrorResponse {
 }
 
 func (dch DeepgramHandler) GetUnhandled() []*chan *[]byte {
-	return []*chan *[]byte{&dch.unhandledChan}
+	ch := dch.unhandledChan
+	return []*chan *[]byte{&ch}
 }
 
 func (dch DeepgramHandler) GetInjectionRefused() []*chan *msginterfaces.InjectionRefusedResponse {
@@ -156,7 +156,7 @@ func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r models.Streamin
 	}
 	defer v.dgWS.Stop()
 	lgr.Info("Starting streaming: user -> agent")
-	v.dgWS.Stream(pr) // user => agent
+	go v.dgWS.Stream(pr) // user => agent
 
 	// handle streaming data from our websocket to the deepgram websocket
 	for {
@@ -181,14 +181,11 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 		defer wgReceivers.Done()
 
 		for br := range dch.binaryChan {
-			fmt.Printf("[Binary Data Received]\n")
-			w <- models.StreamingResponse[models.StreamingResponseBody]{
-				Type: websocket.BinaryMessage,
-				Data: models.StreamingResponseBody{
-					Type: models.SR_AGENT_SPEAK,
-					Data: *br,
-				},
+			if br == nil {
+				continue
 			}
+			fmt.Printf("[Binary Data Received]\n")
+			models.WriteBinary(w, models.StreamingResponseBody{Type: models.SR_AGENT_SPEAK, Data: *br})
 		}
 	}()
 
@@ -232,6 +229,7 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 			case "assistant":
 				fmt.Printf("Agent response: %s\n", ctr.Content)
 				fmt.Printf("Waiting for next user input...\n")
+				models.WriteBinary(w, models.StreamingResponseBody{Type: models.SR_AGENT_TRANSCRIBE, Data: []byte(ctr.Content)})
 			default:
 				fmt.Printf("Received message from %s: %s\n", ctr.Role, ctr.Content)
 			}
@@ -242,7 +240,6 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 			fmt.Printf("[ConversationTextResponse]\n")
 			fmt.Printf("%s: %s", currentSpeaker, currentMessage.String())
 
-			// Write to chat log
 			if err := dch.writeToChatLog(currentSpeaker, currentMessage.String()); err != nil {
 				fmt.Printf("Failed to write to chat log: %v\n", err)
 			}
@@ -289,17 +286,9 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 
 		for asr := range dch.agentStartedSpeakingResponse {
 			fmt.Printf("Agent is starting to respond (latency: %.2fms)\n", asr.TotalLatency)
-
 			var latencyBytes [8]byte
 			binary.BigEndian.PutUint64(latencyBytes[:], math.Float64bits(asr.TotalLatency))
-			w <- models.StreamingResponse[models.StreamingResponseBody]{
-				Type: websocket.BinaryMessage,
-				Data: models.StreamingResponseBody{
-					Type: models.SR_AGENT_SPEAK,
-					Data: latencyBytes[:],
-				},
-			}
-
+			models.WriteBinary(w, models.StreamingResponseBody{Type: models.SR_AGENT_SPEAK, Data: latencyBytes[:]})
 			// Write to chat log
 			if err := dch.writeToChatLog("system", "Agent is starting to respond"); err != nil {
 				fmt.Printf("Failed to write to chat log: %v\n", err)
@@ -395,9 +384,9 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 	wgReceivers.Add(1)
 	go func() {
 		defer wgReceivers.Done()
-		for byData := range dch.unhandledChan {
+		for _ = range dch.unhandledChan {
 			fmt.Printf("\n[UnhandledEvent]\n")
-			fmt.Printf("Raw message: %s\n", string(*byData))
+			// fmt.Printf("Raw message: %s\n", string(*byData))
 		}
 	}()
 

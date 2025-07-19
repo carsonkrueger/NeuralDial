@@ -49,6 +49,8 @@ func (a *AppRouter) BuildRouter() {
 	a.router = chi.NewRouter()
 	lgr := a.appCtx.Lgr("BuildRouter")
 
+	a.router = a.router.With(middlewares.Recover(a.appCtx))
+
 	for _, r := range a.public {
 		router := chi.NewRouter()
 		r.PublicRoute(router)
