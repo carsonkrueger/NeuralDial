@@ -48,7 +48,6 @@ class NeuralDial {
         };
 
         function sendData(data) {
-            console.log('sending data', data);
             speakws.send(data);
         }
     }

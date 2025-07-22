@@ -37,6 +37,7 @@ func NewSpeak(ctx context.AppContext, deepgramKey string) *speak {
 	return &speak{
 		AppContext:  ctx,
 		deepgramKey: deepgramKey,
+		settings:    make(map[string]*interfaces.SettingsOptions),
 	}
 }
 
@@ -89,6 +90,7 @@ func (r *speak) speakWebSocket(res http.ResponseWriter, req *http.Request) {
 	handler := services.NewDeepgramHandler(logFile)
 
 	tOptions := r.GetOptions(ctx)
+	fmt.Printf("----%v\n", tOptions)
 	voiceHandler, err := services.NewVoiceV2(ctx, r.AppContext, r.deepgramKey, &clientOptions, tOptions, handler)
 	r.SM().WebSocketService().StartStreamingResponseSocket(conn, voiceHandler)
 
@@ -119,10 +121,14 @@ func (r *speak) speakOptionsPost(res http.ResponseWriter, req *http.Request) {
 	fmt.Printf("%v\n", opts.Agent.Think.Provider["temperature"])
 	opts.Agent.Listen.Provider["model"] = req.FormValue("listen-model")
 	fmt.Printf("%v\n", opts.Agent.Listen.Provider["model"])
-	opts.Agent.Listen.Provider["keyterms"] = req.FormValue("listen-keyterms")
-	fmt.Printf("%v\n", opts.Agent.Listen.Provider["keyterms"])
+	// opts.Agent.Listen.Provider["keyterms"] = req.FormValue("listen-keyterms")
+	// fmt.Printf("%v\n", opts.Agent.Listen.Provider["keyterms"])
+	opts.Agent.Speak.Provider["model"] = req.FormValue("speak-model")
+	fmt.Printf("%v\n", opts.Agent.Speak.Provider["model"])
 	opts.Agent.Greeting = req.FormValue("greeting")
 	fmt.Printf("%v\n", opts.Agent.Greeting)
+
+	r.SetOptions(ctx, opts)
 }
 
 func (r *speak) DefaultOptions() *interfaces.SettingsOptions {
@@ -133,6 +139,8 @@ func (r *speak) DefaultOptions() *interfaces.SettingsOptions {
 	tOptions.Agent.Think.Prompt = "You are a helpful AI assistant."
 	tOptions.Agent.Listen.Provider["type"] = "deepgram"
 	tOptions.Agent.Listen.Provider["model"] = "nova-3"
+	tOptions.Agent.Speak.Provider["type"] = "deepgram"
+	tOptions.Agent.Speak.Provider["model"] = "aura-2-thalia-en"
 	tOptions.Agent.Language = "en"
 	tOptions.Agent.Greeting = "Hello! How can I help you today?"
 	return tOptions

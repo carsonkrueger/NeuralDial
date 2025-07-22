@@ -46,6 +46,17 @@ templ Speak(opts *interfaces.SettingsOptions) {
 					</select>
 				</div>
 				<div class="flex flex-col justify-center items-center">
+					<label for="speak-model">Speak Model:</label>
+				 	<select name="speak-model">
+						<option value="aura-2-thalia-en">Thalia</option>
+						<option value="aura-2-andromeda-en">Andromeda</option>
+						<option value="aura-2-helena-en">Helena</option>
+						<option value="aura-2-apollo-en">Apollo</option>
+						<option value="aura-2-arcas-en">Arcas</option>
+						<option value="aura-2-aries-en">Aries</option>
+					</select>
+				</div>
+				<div class="flex flex-col justify-center items-center">
 					<label>Temperature: <span id="temperature-val">{ tempStr }</span></label>
 					<input value={ tempStr } oninput="updateTemperature()" id="temp" name="think-temperature" type="range" min="0" max="2" step="0.1"/>
 				</div>

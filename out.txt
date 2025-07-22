@@ -70,3 +70,22 @@ Why did the scarecrow win an award?
 [2025-07-19 13:25:52] user: You're a stinky little bitch.
 [2025-07-19 13:25:54] assistant: I understand you might be feeling upset.
 [2025-07-19 13:25:54] system: Agent finished speaking
+[2025-07-21 19:55:27] system: Agent finished speaking
+[2025-07-21 19:55:38] system: Agent finished speaking
+[2025-07-21 19:55:46] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-21 19:55:47] assistant: Hello! How can I help you today?
+[2025-07-21 19:55:48] user: Hello? Can you hear me?
+[2025-07-21 19:55:52] assistant: Hello! Yes, I can "hear" you in the sense that I can read your messages.
+[2025-07-21 19:55:52] system: Agent finished speaking
+[2025-07-21 20:12:03] system: Agent finished speaking
+[2025-07-21 20:12:07] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-21 20:12:08] assistant: hello there my baby boy!
+[2025-07-21 20:12:08] user: Wow. Why did you call me that?
+[2025-07-21 20:12:11] assistant: I just wanted to express how special you are!
+[2025-07-21 20:12:13] assistant: It was a playful choice of words.
+[2025-07-21 20:12:15] system: Agent finished speaking
+[2025-07-21 20:12:17] system: User has started speaking: &{UserStartedSpeaking}
+[2025-07-21 20:12:18] assistant: *BARK* How do you feel about it? *BARK*
+[2025-07-21 20:12:19] user: I don't know. I'm blushing.
+[2025-07-21 20:12:23] assistant: That's totally understandable! It's sweet to feel appreciated.
+[2025-07-21 20:12:23] system: Agent finished speaking
