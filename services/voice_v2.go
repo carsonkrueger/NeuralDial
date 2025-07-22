@@ -3,6 +3,7 @@ package services
 import (
 	gctx "context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/carsonkrueger/main/context"
 	"github.com/carsonkrueger/main/models"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/agent/v1/websocket/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/agent"
@@ -40,6 +43,7 @@ func NewDeepgramHandler(log io.Writer) DeepgramHandler {
 }
 
 type DeepgramHandler struct {
+	mcp                          *server.MCPServer
 	binaryChan                   chan *[]byte
 	openChan                     chan *msginterfaces.OpenResponse
 	welcomeResponse              chan *msginterfaces.WelcomeResponse
@@ -149,7 +153,7 @@ func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r models.Streamin
 	defer pw.Close()
 
 	lgr.Info("Starting streaming: user <- agent")
-	go v.callback.Run(w) // user <- agent
+	go v.callback.Run(ctx, w) // user <- agent
 	if !v.dgWS.Connect() {
 		lgr.Error("Failed to connect to Deepgram WebSocket")
 		return
@@ -172,7 +176,7 @@ func (v *voiceV2) HandleRequestWithStreaming(ctx gctx.Context, r models.Streamin
 	}
 }
 
-func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponseBody]) error {
+func (dch DeepgramHandler) Run(ctx gctx.Context, w models.StreamingWriter[models.StreamingResponseBody]) error {
 	wgReceivers := sync.WaitGroup{}
 
 	// Handle binary data
@@ -394,7 +398,8 @@ func (dch DeepgramHandler) Run(w models.StreamingWriter[models.StreamingResponse
 	wgReceivers.Add(1)
 	go func() {
 		defer wgReceivers.Done()
-		for range dch.functionCallRequestResponse {
+		for call := range dch.functionCallRequestResponse {
+			dch.HandleToolCall(ctx, call)
 			fmt.Printf("[FunctionCallRequestResponse]")
 		}
 	}()
@@ -419,4 +424,43 @@ func (dch *DeepgramHandler) writeToChatLog(role, content string) error {
 	}
 
 	return nil
+}
+
+func (dch *DeepgramHandler) HandleToolCall(ctx gctx.Context, call *msginterfaces.FunctionCallRequestResponse) (*string, error) {
+	var msg struct {
+		JSONRPC string        `json:"jsonrpc"`
+		Method  mcp.MCPMethod `json:"method"`
+		ID      any           `json:"id,omitempty"`
+		Result  any           `json:"result,omitempty"`
+		mcp.CallToolRequest
+	}
+
+	msg.JSONRPC = mcp.JSONRPC_VERSION
+	msg.Method = mcp.MethodToolsCall
+	msg.Params.Name = call.FunctionName
+	msg.Params.Arguments = call.Input
+	msg.Request.Method = "GET"
+
+	bts, err := json.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tool call message: %v", err)
+	}
+	res := dch.mcp.HandleMessage(ctx, bts)
+	result, ok := res.(mcp.JSONRPCResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type")
+	}
+	toolRes, ok := result.Result.(mcp.CallToolResult)
+	if !ok || toolRes.IsError {
+		return nil, fmt.Errorf("unexpected response type")
+	}
+	content := toolRes.Content[0]
+
+	switch content := content.(type) {
+	case mcp.TextContent:
+		str := content.Text
+		return &str, nil
+	default:
+		return nil, fmt.Errorf("unexpected content type")
+	}
 }
